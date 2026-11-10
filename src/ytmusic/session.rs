@@ -314,6 +314,11 @@ fn reply_all(replies: Vec<oneshot::Sender<Answer>>, answer: Answer) {
 const COOKIE_EVERY: Duration = Duration::from_secs(8);
 /// A sign-in window that ends sooner did not let anyone sign in.
 const SIGN_IN_MIN: Duration = Duration::from_secs(2);
+/// How often the sign-in window's profile is checked for a new login.
+const LOGIN_EVERY: Duration = Duration::from_secs(2);
+/// How long the sign-in window stays once the login is seen, so Google's
+/// redirects back to YouTube Music finish.
+const LOGIN_GRACE: Duration = Duration::from_secs(3);
 
 struct Runner {
     queue: mpsc::Receiver<Request>,
@@ -455,25 +460,38 @@ impl Runner {
     // --- Signing in -----------------------------------------------------------
 
     /// Runs the sign-in window: an ordinary browser window, with no
-    /// automation and no bridge. The user signs in and closes the window; a
-    /// window the user closes is a clean quit, which flushes the session's
-    /// cookies to disk, so the login survives a restart.
+    /// automation and no bridge. It ends when the user closes it (a clean
+    /// quit, which flushes the session's cookies to disk), or, once the
+    /// profile holds a new YouTube login, when the engine closes it: on macOS
+    /// closing the last window leaves the browser running, so the window's
+    /// end alone cannot say the user is done.
     fn sign_in(&mut self) -> Next {
         let Some(binary) = chrome::find_browser() else { return self.failed(Runner::no_browser()) };
         log::info!("sign-in: opening the login window");
         self.health(Health::signing_in());
+        let profile = self.paths.profile();
+        // Only a login that appears while the window is open ends it.
+        let had_login = import::has_youtube_login(&profile);
         let mut browser = match Browser::start_sign_in(&binary, &self.paths) {
             Ok(browser) => browser,
             Err(failure) => return self.failed(failure),
         };
+        let mut checked = Instant::now();
+        let mut login_seen: Option<Instant> = None;
         loop {
             match self.queue.recv_timeout(Duration::from_millis(150)) {
                 Ok(Request::Command { reply, .. }) => {
                     let _ = reply.send(Err(EngineError::new(ErrorCode::NotReady, "signing in")));
                 }
-                // Cancel: close the window and go back without a new session.
+                // Cancel: close the window (cleanly: the cookies so far are
+                // kept) and go back to the player. A login made by then counts.
                 Ok(Request::CancelSignIn) => {
                     drop(browser);
+                    if !had_login && import::has_youtube_login(&profile) {
+                        log::info!("sign-in: cancelled after signing in; keeping the login");
+                        import::settle(&self.paths, "signed in");
+                        self.backoff.reset();
+                    }
                     return Next::Player;
                 }
                 Ok(Request::SignOut) => log::info!("sign-out ignored while the sign-in window is open"),
@@ -485,6 +503,20 @@ impl Runner {
                 Ok(Request::SignIn | Request::Retry | Request::Evaluated { .. } | Request::Cookies(_)) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Next::Exit(None),
+            }
+            if !had_login && login_seen.is_none() && checked.elapsed() >= LOGIN_EVERY {
+                checked = Instant::now();
+                if import::has_youtube_login(&profile) {
+                    log::info!("sign-in: signed in; closing the window in {LOGIN_GRACE:?}");
+                    login_seen = Some(Instant::now());
+                }
+            }
+            if login_seen.is_some_and(|at| at.elapsed() >= LOGIN_GRACE) && browser.exited().is_none() {
+                // A clean stop (SIGTERM), which writes the cookies out.
+                drop(browser);
+                import::settle(&self.paths, "signed in");
+                self.backoff.reset();
+                return Next::Player;
             }
             if let Some(status) = browser.exited() {
                 let lived = browser.uptime();

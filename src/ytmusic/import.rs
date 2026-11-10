@@ -104,6 +104,44 @@ pub fn import_once(paths: &Paths, source: Option<&Path>) -> Outcome {
     }
 }
 
+/// Whether `profile` holds a signed-in YouTube login: a session cookie
+/// (`SAPISID`, `__Secure-3PAPISID`) for youtube.com. Reads the cookie
+/// database as it is on disk, while the browser may run and hold it locked
+/// (`immutable`: no locks, no journal), so it sees the cookies the browser
+/// has written so far; the browser writes them within about 30 seconds.
+pub fn has_youtube_login(profile: &Path) -> bool {
+    COOKIE_DBS.iter().map(|db| profile.join(db)).filter(|db| db.is_file()).any(|db| {
+        let uri = format!("file:{}?immutable=1", uri_path(&db));
+        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        Connection::open_with_flags(uri, flags)
+            .and_then(|conn| {
+                conn.query_row(
+                    "SELECT count(*) FROM cookies WHERE (host_key = '.youtube.com' OR host_key = 'youtube.com') \
+                     AND name IN ('SAPISID', '__Secure-3PAPISID') AND (length(encrypted_value) > 0 OR length(value) > 0)",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+            })
+            .is_ok_and(|n| n > 0)
+    })
+}
+
+/// `path` for a SQLite `file:` URI: `%`, `?` and `#` (and spaces) escaped.
+fn uri_path(path: &Path) -> String {
+    let mut out = String::new();
+    for c in path.to_string_lossy().chars() {
+        match c {
+            '%' => out.push_str("%25"),
+            '?' => out.push_str("%3f"),
+            '#' => out.push_str("%23"),
+            ' ' => out.push_str("%20"),
+            '\\' => out.push('/'),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// `YTMFAST_PROFILE`, when set.
 pub fn source_from_env() -> Option<PathBuf> {
     std::env::var_os("YTMFAST_PROFILE").filter(|p| !p.is_empty()).map(PathBuf::from)
@@ -224,6 +262,24 @@ mod tests {
         conn.pragma_update(None, "journal_mode", "WAL").unwrap();
         conn.execute_batch("CREATE TABLE IF NOT EXISTS cookies (name TEXT, value TEXT)").unwrap();
         conn.execute("INSERT INTO cookies VALUES ('sp_dc', ?1)", [value]).unwrap();
+    }
+
+    #[test]
+    fn sees_a_youtube_login_in_a_profile_in_use() {
+        let profile = scratch("login").join("Application Support/browser");
+        let db = profile.join("Default/Cookies");
+        assert!(!has_youtube_login(&profile));
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB)").unwrap();
+        conn.execute("INSERT INTO cookies VALUES ('.youtube.com', 'VISITOR_INFO1_LIVE', '', x'01')", []).unwrap();
+        conn.execute("INSERT INTO cookies VALUES ('.google.com', 'SAPISID', '', x'01')", []).unwrap();
+        assert!(!has_youtube_login(&profile), "no YouTube session cookie yet");
+        // Held open, as the browser holds it.
+        conn.execute("INSERT INTO cookies VALUES ('.youtube.com', 'SAPISID', '', x'0102')", []).unwrap();
+        assert!(has_youtube_login(&profile));
+        drop(conn);
+        let _ = std::fs::remove_dir_all(profile.parent().unwrap().parent().unwrap());
     }
 
     fn read_cookie(path: &Path) -> String {
