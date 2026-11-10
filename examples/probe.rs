@@ -6,6 +6,7 @@
 //! cargo run --example probe                      # home, search, a playlist, album and artist
 //! cargo run --example probe -- search "kites"    # one call: name, then its arguments
 //! cargo run --example probe -- play ytm:track:<videoId>
+//! cargo run --example probe -- signin              # open the sign-in window; report when it is done
 //! PROBE_WATCH=40 cargo run --example probe -- context ytm:album:<id> ytm:track:<videoId>
 //! ```
 //!
@@ -62,6 +63,23 @@ fn main() {
             }
         }
     };
+
+    if args.first().map(String::as_str) == Some("signin") {
+        // Opens the sign-in window and reports when the engine is done with
+        // it (closed by the user, or by the engine once signed in).
+        session.sign_in();
+        let opened = Instant::now();
+        while state.borrow().health.status != HealthStatus::SigningIn && opened.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        eprintln!("sign-in window open");
+        while state.borrow().health.status == HealthStatus::SigningIn {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        eprintln!("sign-in over after {:.1} s; health {:?}", opened.elapsed().as_secs_f32(), state.borrow().health.status);
+        session.shutdown(Duration::from_secs(8));
+        return;
+    }
 
     if let Some(name) = args.first() {
         let arg = args.get(1).cloned().unwrap_or_default();

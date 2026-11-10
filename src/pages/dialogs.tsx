@@ -156,7 +156,7 @@ export function SigningInDialog() {
           Sign in to YouTube Music
         </Text>
         <Text class="text-center text-sm text-muted-foreground">
-          Sign in with Google in the window that opened. It closes by itself once you're signed in.
+          Sign in with Google in the window that opened. It closes by itself once you're signed in, or close it when you're done.
         </Text>
         <ActionButton label="Cancel" onPress={cancelSignIn} />
       </View>

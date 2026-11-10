@@ -314,11 +314,15 @@ fn reply_all(replies: Vec<oneshot::Sender<Answer>>, answer: Answer) {
 const COOKIE_EVERY: Duration = Duration::from_secs(8);
 /// A sign-in window that ends sooner did not let anyone sign in.
 const SIGN_IN_MIN: Duration = Duration::from_secs(2);
-/// How often the sign-in window's profile is checked for a new login.
-const LOGIN_EVERY: Duration = Duration::from_secs(2);
+/// How often the sign-in window's profile is checked for a new login (a
+/// read of the cookie database, which the browser writes within about 30
+/// seconds of a change).
+const LOGIN_EVERY: Duration = Duration::from_millis(500);
 /// How long the sign-in window stays once the login is seen, so Google's
 /// redirects back to YouTube Music finish.
-const LOGIN_GRACE: Duration = Duration::from_secs(3);
+const LOGIN_GRACE: Duration = Duration::from_secs(1);
+/// How often the sign-in window's windows are counted (macOS).
+const WINDOWS_EVERY: Duration = Duration::from_millis(250);
 
 struct Runner {
     queue: mpsc::Receiver<Request>,
@@ -460,11 +464,12 @@ impl Runner {
     // --- Signing in -----------------------------------------------------------
 
     /// Runs the sign-in window: an ordinary browser window, with no
-    /// automation and no bridge. It ends when the user closes it (a clean
-    /// quit, which flushes the session's cookies to disk), or, once the
-    /// profile holds a new YouTube login, when the engine closes it: on macOS
-    /// closing the last window leaves the browser running, so the window's
-    /// end alone cannot say the user is done.
+    /// automation and no bridge. It ends when the user closes the window, or,
+    /// once the profile holds a new YouTube login, when the engine closes it.
+    /// On Linux and Windows closing the window quits the browser (a clean
+    /// quit, which flushes the session's cookies to disk); on macOS the
+    /// browser stays without windows, so the engine watches its windows and
+    /// quits it cleanly when the last one closes.
     fn sign_in(&mut self) -> Next {
         let Some(binary) = chrome::find_browser() else { return self.failed(Runner::no_browser()) };
         log::info!("sign-in: opening the login window");
@@ -478,6 +483,9 @@ impl Runner {
         };
         let mut checked = Instant::now();
         let mut login_seen: Option<Instant> = None;
+        let mut counted = Instant::now();
+        // How many windows the browser had in all while its window showed.
+        let mut shown_total: Option<usize> = None;
         loop {
             match self.queue.recv_timeout(Duration::from_millis(150)) {
                 Ok(Request::Command { reply, .. }) => {
@@ -511,7 +519,23 @@ impl Runner {
                     login_seen = Some(Instant::now());
                 }
             }
-            if login_seen.is_some_and(|at| at.elapsed() >= LOGIN_GRACE) && browser.exited().is_none() {
+            let mut closed = false;
+            if counted.elapsed() >= WINDOWS_EVERY {
+                counted = Instant::now();
+                if let Some((onscreen, total)) = browser.windows() {
+                    if onscreen > 0 {
+                        shown_total = Some(total);
+                    } else if shown_total.is_some_and(|shown| total < shown) {
+                        log::info!("sign-in: the window was closed");
+                        closed = true;
+                    }
+                }
+            }
+            let signed_in = login_seen.is_some_and(|at| at.elapsed() >= LOGIN_GRACE);
+            if (signed_in || closed) && browser.exited().is_none() {
+                if signed_in {
+                    log::info!("sign-in: signed in; closing the window");
+                }
                 // A clean stop (SIGTERM), which writes the cookies out.
                 drop(browser);
                 import::settle(&self.paths, "signed in");

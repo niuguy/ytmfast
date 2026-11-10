@@ -407,6 +407,22 @@ impl Browser {
         Browser::spawn(command, binary, paths, "sign-in")
     }
 
+    /// Its windows, where the system can tell: how many are on screen,
+    /// and how many it has in all (hidden ones too). On macOS, closing the
+    /// last window leaves the browser running, so this is how the engine
+    /// sees the sign-in window closed: none on screen, and one fewer in all
+    /// (a minimized window is off screen but still counted). None elsewhere.
+    pub fn windows(&self) -> Option<(usize, usize)> {
+        #[cfg(target_os = "macos")]
+        {
+            i32::try_from(self.child.id()).ok().map(mac::windows_of)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            None
+        }
+    }
+
     /// How it ended, once it has.
     pub fn exited(&mut self) -> Option<ExitStatus> {
         self.child.try_wait().ok().flatten()
@@ -457,6 +473,75 @@ impl Drop for Browser {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
+    }
+}
+
+/// The window server's list of a process's windows (CoreGraphics). It
+/// reads only owners and layers, which needs no screen-recording permission.
+#[cfg(target_os = "macos")]
+mod mac {
+    use std::ffi::c_void;
+
+    type CFTypeRef = *const c_void;
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFArrayGetCount(array: CFTypeRef) -> isize;
+        fn CFArrayGetValueAtIndex(array: CFTypeRef, index: isize) -> CFTypeRef;
+        fn CFDictionaryGetValue(dictionary: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
+        fn CFNumberGetValue(number: CFTypeRef, kind: isize, out: *mut c_void) -> u8;
+        fn CFBooleanGetValue(boolean: CFTypeRef) -> u8;
+        fn CFRelease(object: CFTypeRef);
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> CFTypeRef;
+        static kCGWindowOwnerPID: CFTypeRef;
+        static kCGWindowLayer: CFTypeRef;
+        static kCGWindowIsOnscreen: CFTypeRef;
+    }
+
+    /// `kCGWindowListOptionAll`.
+    const ALL: u32 = 0;
+    /// `kCFNumberSInt64Type`.
+    const SINT64: isize = 4;
+
+    /// SAFETY: `dictionary` is a live CFDictionary.
+    unsafe fn number(dictionary: CFTypeRef, key: CFTypeRef) -> Option<i64> {
+        let mut out = 0i64;
+        // SAFETY: a CFNumber read into an i64 of the requested type.
+        unsafe {
+            let value = CFDictionaryGetValue(dictionary, key);
+            (!value.is_null() && CFNumberGetValue(value, SINT64, (&raw mut out).cast()) != 0).then_some(out)
+        }
+    }
+
+    /// `pid`'s ordinary (layer 0) windows: how many are on screen, and how
+    /// many in all.
+    pub fn windows_of(pid: i32) -> (usize, usize) {
+        let (mut onscreen, mut total) = (0, 0);
+        // SAFETY: CoreGraphics returns an owned CFArray of CFDictionaries (or
+        // null), read here and released once.
+        unsafe {
+            let list = CGWindowListCopyWindowInfo(ALL, 0);
+            if list.is_null() {
+                return (0, 0);
+            }
+            for i in 0..CFArrayGetCount(list) {
+                let window = CFArrayGetValueAtIndex(list, i);
+                if number(window, kCGWindowOwnerPID) != Some(i64::from(pid)) || number(window, kCGWindowLayer) != Some(0) {
+                    continue;
+                }
+                total += 1;
+                let shown = CFDictionaryGetValue(window, kCGWindowIsOnscreen);
+                if !shown.is_null() && CFBooleanGetValue(shown) != 0 {
+                    onscreen += 1;
+                }
+            }
+            CFRelease(list);
+        }
+        (onscreen, total)
     }
 }
 
