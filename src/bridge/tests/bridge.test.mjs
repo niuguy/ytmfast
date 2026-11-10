@@ -567,6 +567,19 @@ test("ready waits for the API config; then the state is reported", () => {
   assert.equal(s.premium, null);
 });
 
+test("no cover until something plays: an empty image is no URL", () => {
+  assert.equal(B.imageSrcOf(h("img", { src: "" })), "");
+  assert.equal(B.imageSrcOf(h("img", { src: "data:image/gif;base64,R0lG" })), "");
+  assert.equal(B.imageSrcOf(h("img", { src: "https://lh3.googleusercontent.com/x=w60-h60" })), "https://lh3.googleusercontent.com/x=w60-h60");
+  const { win, mp } = page();
+  win.navigator.mediaSession = { metadata: null };
+  mp.getVideoData = () => ({ video_id: "", title: "" });
+  win.document.querySelector("ytmusic-player-bar").append(h("img", { class: "image", src: "" }));
+  const bridge = B.createBridge(win, options(win));
+  bridge.tick();
+  assert.equal(win.posted.find((m) => m.type === "state").state.artwork, "");
+});
+
 test("controls go through the player and its bar", async () => {
   const { win, p, bar, like } = page();
   const bridge = B.createBridge(win, options(win));

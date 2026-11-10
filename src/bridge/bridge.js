@@ -44,7 +44,7 @@
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 5;
+  const REVISION = 6;
   const ORIGIN = "https://music.youtube.com";
   const LIKED_ID = "LM";
   const LIKED_URI = "ytm:collection:" + LIKED_ID;
@@ -723,6 +723,12 @@
   const REPEAT = { NONE: "off", ALL: "context", ONE: "track" };
   const repeatOf = (attribute) => REPEAT[String(attribute || "").toUpperCase()] || "off";
 
+  // An <img>'s image URL from its `src` attribute (not the property, which
+  // turns an empty attribute into the page's URL); "" for anything but http(s).
+  const imageSrcOf = (el) => {
+    const raw = (el && el.getAttribute && el.getAttribute("src")) || "";
+    return /^https?:\/\//.test(raw) ? raw : "";
+  };
   const hasClass = (el, name) => !!el && ` ${(el.getAttribute && el.getAttribute("class")) || ""} `.includes(` ${name} `);
   const isDisabled = (el) => !!el && (el.disabled === true || (el.getAttribute && (el.getAttribute("aria-disabled") === "true" || el.getAttribute("disabled") != null)));
   const usable = (name, el) => {
@@ -1149,7 +1155,9 @@
       const ad = adNow();
       const v = video();
       const title = (meta && meta.title) || data.title || text(inBar(SEL.barTitle) && inBar(SEL.barTitle).textContent) || "";
-      const artwork = meta && meta.artwork && meta.artwork.length ? meta.artwork[meta.artwork.length - 1].src : (inBar(SEL.barImage) && inBar(SEL.barImage).src) || "";
+      // The bar's own image only while something is loaded, and only a real
+      // image URL: an <img src=""> reads back as the page's own URL.
+      const artwork = meta && meta.artwork && meta.artwork.length ? meta.artwork[meta.artwork.length - 1].src : title ? imageSrcOf(inBar(SEL.barImage)) : "";
       const position = v && isFinite(v.currentTime) ? v.currentTime : Number(call("getCurrentTime")) || 0;
       const duration = v && isFinite(v.duration) && v.duration > 0 ? v.duration : Number(call("getDuration")) || 0;
       const shuffle = inBar(SEL.shuffle);
@@ -1672,6 +1680,7 @@
     stateKey,
     shouldPost,
     repeatOf,
+    imageSrcOf,
     parseUri,
     watchOf,
     contextOf,

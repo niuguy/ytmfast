@@ -43,7 +43,7 @@
       "chart-3": "#5ff08f",
       "chart-4": "#14833b",
       "chart-5": "#0b5c29",
-      "font-mono": "JetBrains Mono, ui-monospace, monospace"
+      "font-mono": "ui-monospace"
     },
     "dark": {
       "background": "#0b0c0d",
@@ -81,7 +81,7 @@
       "chart-3": "#5ff08f",
       "chart-4": "#14833b",
       "chart-5": "#a6f5c2",
-      "font-mono": "JetBrains Mono, ui-monospace, monospace"
+      "font-mono": "ui-monospace"
     }
   }
 }

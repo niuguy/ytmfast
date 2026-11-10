@@ -127,9 +127,10 @@ replaces the colours.
 
 ## Typography
 
-The system's sans; JetBrains Mono for figures where installed, else
-`ui-monospace`, then `monospace` (`font-mono` is a fallback list, so no system
-warns about a missing font).
+The system's sans; the system's monospace for figures (`font-mono` is
+`ui-monospace`: SF Mono on macOS, the configured monospace on Linux). It is
+one generic family, not a list: NSH's theme keeps only a token's first
+family, so a font that may be missing must not come first.
 
 | Use | Class |
 |---|---|
