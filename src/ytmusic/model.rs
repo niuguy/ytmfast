@@ -13,7 +13,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Item {
-    /// The Spotify URI (`ytm:playlist:…`).
+    /// The URI (`ytm:playlist:…`).
     pub uri: String,
     /// `playlist`, `album`, `artist`, `show`, `collection` or `track`.
     pub kind: String,
@@ -171,9 +171,9 @@ pub struct CoverColor {
 pub struct Lyrics {
     /// Whether each line has its time (else they are plain words).
     pub synced: bool,
-    /// The lines in order; none when Spotify has no lyrics for the track.
+    /// The lines in order; none when YouTube Music has no lyrics for the track.
     pub lines: Vec<LyricLine>,
-    /// Who provides them (shown under them, as Spotify does), or empty.
+    /// Who provides them (shown under them), or empty.
     pub provider: String,
 }
 
@@ -291,10 +291,10 @@ pub enum ErrorCode {
     #[default]
     #[prop(rename = "E_NOT_READY")]
     NotReady,
-    /// No Spotify account is signed in.
+    /// No Google account is signed in.
     #[prop(rename = "E_SIGNED_OUT")]
     SignedOut,
-    /// Another browser process holds Spotish's profile.
+    /// Another browser process holds YTMFast's profile.
     #[prop(rename = "E_PROFILE_IN_USE")]
     ProfileInUse,
     /// No Chromium-family browser is installed.

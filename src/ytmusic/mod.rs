@@ -1,4 +1,4 @@
-//! The Spotify web player, run and driven by the app: the browser it runs in
+//! YouTube Music's web player, run and driven by the app: the browser it runs in
 //! (`chrome`), the DevTools connection (`cdp`), the bridge's protocol
 //! (`bridge`), the session that keeps them (`session`), the process's one
 //! engine (`engine`), the one-time login import (`import`), where files live

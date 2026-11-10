@@ -107,7 +107,7 @@ requests:
   | `desktop`, `phone`, `tui` | One shell (`src/shells/`) |
   | `data` | Queries and the cache (`src/data/`) |
   | `ci`, `release` | The workflows: checks, and packaging and publishing |
-  | `website`, `docs`, `tests` | The site, the documentation, the tests alone |
+  | `scripts`, `docs`, `tests` | The installers, the documentation, the tests alone |
 
   For example: `lyrics: Show the lyrics in Now Playing`, `nav: Keep the last four pages in the stack`,
   `ci: Install GStreamer for the Linux builds`.
@@ -149,8 +149,25 @@ TSX (the interface), from `App.tsx`:
 - `tests/` — the app's flows on the demo backend (`app.test.tsx`), the opt-in benchmarks (`bench.test.tsx`), and the
   Rust tests.
 
-The website (`website/`, Astro) is separate: `cd website && bun install && bun run build`. It also serves the
-installers, `website/public/install.sh` and `install.ps1`.
+The installers are `scripts/install.sh` (macOS, Linux) and `scripts/install.ps1` (Windows). They install the
+latest GitHub release; the release workflow tries each on the package it just built.
+
+## Releasing
+
+CI (`.github/workflows/ci.yml`) runs the checks above on every push to `main` and every pull request.
+
+A release is a tag: bump `version` in `nsh.json` and `Cargo.toml`, merge, then
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` packages the app with `nsh package` for macOS (Apple silicon), Linux (x86_64)
+and Windows (x86_64), tries the installer on each package, and publishes a GitHub release with the installers'
+archives (`ytmfast-macos-arm64.zip`, `ytmfast-linux-x86_64.tar.gz`, `ytmfast-windows-x86_64.zip`), the versioned
+archives and `latest.json` the in-app updater reads (`nsh.json` "updater"), and `sha256sums`. Running the workflow by
+hand builds the packages as workflow artifacts without publishing. The tag fails when the nightly `nsh` CLI and
+`Cargo.lock`'s NSH commit differ: move the lock (`cargo update -p nsh-core --precise <nightly hash>`) and tag again.
 
 ## Built on NSH
 

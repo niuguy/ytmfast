@@ -1,4 +1,4 @@
-// The system theme's mapping onto Spotish's tokens, with two real Omarchy
+// The system theme's mapping onto YTMFast's tokens, with two real Omarchy
 // palettes (./fixtures): pure functions, no app needed.
 import { describe, expect, test } from "nsh/test";
 

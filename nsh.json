@@ -14,6 +14,9 @@
   },
   "rust": ".",
   "minRuntime": "0.4.0",
+  "updater": {
+    "github": "niuguy/ytmfast"
+  },
   "macos": {
     "infoPlist": {
       "NSAudioCaptureUsageDescription": "YTMFast listens to the music it plays so its lights move with the beat. The sound never leaves this Mac."

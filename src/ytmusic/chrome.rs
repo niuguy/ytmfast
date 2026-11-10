@@ -158,7 +158,7 @@ pub fn profile_in_use(pid: Option<u32>) -> EngineError {
     let by = pid.map(|p| format!("process {p}")).unwrap_or_else(|| "another browser".into());
     EngineError::new(
         ErrorCode::ProfileInUse,
-        format!("Spotish's browser profile is in use by {by}. Quit it (or another Spotish) and Spotish starts again."),
+        format!("YTMFast's browser profile is in use by {by}. Quit it (or another YTMFast) and YTMFast starts again."),
     )
 }
 

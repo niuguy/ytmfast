@@ -312,7 +312,7 @@ export function TextLink(props: { label: string; onPress: () => void; small?: bo
 /** An item's image, square (or round for an artist), with a glyph while it
  * has none. Sized by `size` (points) or by `class` (`w-full max-w-52`). In a
  * terminal it takes no Cells. `liked` is Liked Songs' own cover, a red heart
- * tile, in place of Spotify's artwork. */
+ * tile, in place of the artwork. */
 export function Cover(props: {
   src: string;
   size?: number;

@@ -49,7 +49,7 @@ function choose(): Backend {
       engine.setBridge(BRIDGE_SOURCE);
       return engine;
     } catch (error) {
-      console.error("spotish: the engine is unavailable, playing the demo:", String(error));
+      console.error("ytmfast: the engine is unavailable, playing the demo:", String(error));
     }
   }
   return demo(p);

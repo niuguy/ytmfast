@@ -1,7 +1,7 @@
 //! The engine: one session per process, started on first use and shut down
 //! with the process.
 //!
-//! TSX may construct `Spotify` many times (hot reload runs module code
+//! TSX may construct `YTMusic` many times (hot reload runs module code
 //! again); each is a handle onto this one engine, so there is never a second
 //! browser on the same profile. When the process exits (`main` returns or
 //! `exit` is called), an `atexit` hook asks the session to close the browser

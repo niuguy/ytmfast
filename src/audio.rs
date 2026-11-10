@@ -8,12 +8,12 @@
 //! system mixer like any app's, so the meter records it there:
 //!
 //! - Linux: `parec` (PulseAudio, or PipeWire's pulse server) records the
-//!   sink input of Spotish's own Chromium (`--monitor-stream`), found by its
+//!   sink input of YTMFast's own Chromium (`--monitor-stream`), found by its
 //!   `application.process.id` being a descendant of this process; without
 //!   one it records the default sink's monitor (everything that plays). The
 //!   stream is looked for again every few seconds, so the meter follows the
 //!   browser being restarted.
-//! - macOS 14.2+: a Core Audio process tap on the processes of Spotish's own
+//! - macOS 14.2+: a Core Audio process tap on the processes of YTMFast's own
 //!   Chromium that play (its audio service), private and unmuted, read
 //!   through a private aggregate device and resampled to 48 kHz. The first
 //!   tap asks for "System Audio Recording" (`NSAudioCaptureUsageDescription`
@@ -72,7 +72,7 @@ struct Inner {
     capture: Option<capture::Capture>,
 }
 
-/// A live meter of the music Spotish plays: loudness, bass, mids, treble, a
+/// A live meter of the music YTMFast plays: loudness, bass, mids, treble, a
 /// spectrum and a beat pulse, about 60 frames a second while sound plays.
 /// Linux only for now; elsewhere `available` is false and no frames come.
 #[class]
@@ -572,7 +572,7 @@ mod capture {
     /// What `parec` records.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Target {
-        /// A sink input (Spotish's browser's stream).
+        /// A sink input (YTMFast's browser's stream).
         Stream(u32),
         /// The default sink's monitor: everything that plays.
         DefaultMonitor,
@@ -695,7 +695,7 @@ mod capture {
             "--channels=2",
             "--latency-msec=20",
             "--raw",
-            "--client-name=Spotish",
+            "--client-name=YTMFast",
             "--stream-name=Audio meter",
         ]);
         match target {
@@ -751,7 +751,7 @@ mod capture {
         }
     }
 
-    /// The stream to record: Spotish's browser's sink input, else the
+    /// The stream to record: YTMFast's browser's sink input, else the
     /// default monitor.
     fn resolve() -> Target {
         let me = std::process::id();
@@ -923,9 +923,9 @@ mod capture {
     //! Recording with a Core Audio process tap (macOS 14.2+), on a thread of
     //! its own.
     //!
-    //! The tap mixes down to stereo what Spotish's own processes play (the
+    //! The tap mixes down to stereo what YTMFast's own processes play (the
     //! browser's audio service is a child of its browser, which is a child
-    //! of Spotish), without muting it, and only for this app (a private
+    //! of YTMFast), without muting it, and only for this app (a private
     //! tap). It reaches an IO proc through a private aggregate device made
     //! for it. Which processes play is looked for again every few seconds:
     //! the audio service appears once the music starts, and the browser may
@@ -1167,7 +1167,7 @@ mod capture {
     }
 
     /// The process objects of Core Audio (the processes that use audio)
-    /// that are Spotish's descendants, sorted.
+    /// that are YTMFast's descendants, sorted.
     fn own_processes() -> Vec<AudioObjectID> {
         let address = address(kAudioHardwarePropertyProcessObjectList);
         let mut size = 0u32;
@@ -1304,7 +1304,7 @@ mod capture {
                     &*key(kAudioAggregateDeviceTapListKey),
                 ],
                 &[
-                    Retained::into_super(NSString::from_str("Spotish audio meter")),
+                    Retained::into_super(NSString::from_str("YTMFast audio meter")),
                     Retained::into_super(device_uid),
                     one(),
                     one(),

@@ -1,5 +1,5 @@
 // The music's live levels, for visuals that move with it (the shader).
-// Rust (`AudioMeter`, src/audio.rs) records Spotish's own audio stream from
+// Rust (`AudioMeter`, src/audio.rs) records YTMFast's own audio stream from
 // the system mixer and analyzes it; this side shares one meter per process
 // and hands out an accessor.
 //

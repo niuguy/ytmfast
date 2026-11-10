@@ -19,7 +19,7 @@ none, remove this section.
 
 ## How to Test
 
-The tests and checks you ran, and how to reproduce them. Say what was not tested (a real Spotify account, a
+The tests and checks you ran, and how to reproduce them. Say what was not tested (a real Google account, a
 platform).
 
 ## Checklist

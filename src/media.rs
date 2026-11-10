@@ -3,13 +3,13 @@
 //! `playerctl` read; the System Media Transport Controls on Windows;
 //! `MPNowPlayingInfoCenter` on macOS), through the `souvlaki` crate.
 //!
-//! It knows nothing of the Spotify engine: TSX tells it what plays
+//! It knows nothing of the YouTube Music engine: TSX tells it what plays
 //! (`setMetadata`, `setPlayback`) and hears the system's commands
 //! (`onCommand`), which it wires to the player (`src/platform/media.ts`).
 //!
 //! Platform notes:
 //! - Linux: registers `org.mpris.MediaPlayer2.ytmfast` on the session bus
-//!   (zbus, no libdbus). One per session: a second Spotish process may not
+//!   (zbus, no libdbus). One per session: a second YTMFast process may not
 //!   get the name, and its controls then stay silent (souvlaki's service
 //!   thread ends with a logged panic; the app is unaffected).
 //! - Windows: SMTC needs a top-level window of the process (`HWND`), which
@@ -242,7 +242,7 @@ mod backend {
             let Some(hwnd) = super::window::hwnd() else { return false };
             let config = PlatformConfig {
                 dbus_name: "ytmfast",
-                display_name: "Spotish",
+                display_name: "YTMFast",
                 hwnd,
             };
             let mut controls = match MediaControls::new(config) {

@@ -1,8 +1,10 @@
-# Spotish design
+# YTMFast design
 
-How Spotish looks and moves, as built. These rules sit on top of the
+How YTMFast looks and moves, as built. The design is Spotish's, which
+YTMFast is forked from; it is kept as Spotish wrote it except where YouTube
+Music differs. These rules sit on top of the
 [NSH Design Guides](https://nsh.dev/docs/design-guides.md); where the two
-differ, these win for Spotish. Change a rule here first, then in the code;
+differ, these win for YTMFast. Change a rule here first, then in the code;
 where this document and the code disagree, fix one of them.
 
 Values below are points (pt) unless marked. File paths are relative to the
@@ -10,8 +12,8 @@ repository root.
 
 ## Principles
 
-- **Its own look.** Spotify's information architecture (sidebar, pages,
-  player bar, Now Playing), not Spotify's look. Spotish's identity lives in
+- **Its own look.** A music app's information architecture (sidebar, pages,
+  player bar, Now Playing), not YouTube Music's look. YTMFast's identity lives in
   shape, depth, type and motion, so it survives any palette the system hands
   it.
 - **Dark, quiet, flat.** The pages, the window and Now Playing share one
@@ -21,7 +23,7 @@ repository root.
   from the cover. Controls stay quiet so they don't compete with it.
 - **Compact.** Don't waste rows: one band for a collection's header, one line
   per library row.
-- **Fast and light.** Spotish is NSH's showcase. Nothing redraws without a
+- **Fast and light.** YTMFast, like Spotish, is an NSH showcase. Nothing redraws without a
   change to show; anything that can grow is virtualized.
 
 ## At a glance
@@ -223,7 +225,7 @@ the player bar floating over the pages' bottom (`inset-x-3 bottom-1`).
 `src/components/ui/title-bar.tsx`, `nsh.json` (`titleBar: hidden`, 40 high).
 
 - **macOS and Windows**: the app draws its own 40pt bar across the top: the
-  mark (18pt) and "Spotish" (`text-sm font-semibold`), clear of the traffic
+  mark (18pt) and "YTMFast" (`text-sm font-semibold`), clear of the traffic
   lights (left) or the caption buttons (right). The whole bar drags the
   window; double-click maximizes. It goes in full screen.
 - **Linux** keeps the system's title bar (`installDesktopShell`,
@@ -284,12 +286,12 @@ Opens up from the sidebar's foot (down from the header when the sidebar is
 folded), exactly as wide as the account row (`accountMenuWidth()`: the
 sidebar less the panel's 8 + 1 each side), so it lines up edge to edge.
 
-- First, who is signed in: a 32pt avatar, the name, "Spotify Premium" or
-  "Spotify Free".
+- First, who is signed in: a 32pt avatar, the name, "YouTube Music Premium" or
+  "YouTube Music".
 - Rows: an icon centred in a 32pt slot (under the avatar's centre, labels
   under the name), the label, and ↗ for a page that opens in the browser, or
   a check for a setting.
-- Order: Premium ↗ (free accounts), Spotify ↗ | About…, GitHub ↗, NSH ↗, FPS
+- Order: Premium ↗ (free accounts), YouTube Music ↗ | About…, GitHub ↗, NSH ↗, FPS
   | Log out, Exit.
 
 ### Cards
@@ -412,7 +414,7 @@ cover, title, artist, a 36pt play button. It opens Now Playing.
 
 `src/components/ui/overlays.tsx`, `src/pages/dialogs.tsx`.
 
-- Dialogs (About, Log in to Spotify): centred, `max-w-md`, a ✕ at the top
+- Dialogs (About, Sign in to YouTube Music): centred, `max-w-md`, a ✕ at the top
   right. Escape, back and the scrim close them unless the flow forbids it
   (signing in closes only through Cancel).
 - Sheets: the phone's drawer (left), Now Playing (bottom, full), the
@@ -448,10 +450,11 @@ paused or with reduced motion.
 
 ### Logo
 
-`src/ui/logo.tsx`: three rounded bars of a level meter, near-black, on a
-glossy green tile (`#5ff08f` → `#1ed760` → `#14833b`, a soft top gloss). The
-app, the website's favicon and header draw the same mark; the tray draws the
-three bars alone in the panel's text colour. Beside a title and subtitle it
+`src/ui/logo.tsx`: a rounded play triangle with three speed lines,
+near-black (`#120a24`), on a glossy violet-to-coral tile (`#a48bff` →
+`#7a5cff` → `#ff6f7d`, a soft top gloss); not YouTube's red. The app icon
+(`icon.svg`, `icon.png`) draws the same mark; the tray draws the triangle and
+lines alone in the panel's text colour. Beside a title and subtitle it
 is as tall as both lines (44); in the title bar, 18.
 
 ## The music light
@@ -577,13 +580,13 @@ playing bars rest.
 ## Words
 
 - Short, sentence case. Menu items say only what they are: Premium,
-  Spotify, About…, GitHub, NSH, FPS, Log out, Exit. "…" marks an item that
+  YouTube Music, About…, GitHub, NSH, FPS, Log out, Exit. "…" marks an item that
   opens a dialog; ↗ one that opens the browser.
-- Say "Spotify", not "spotify.com". Log in / Log out, not sign in.
+- Say "YouTube Music", not "music.youtube.com". Log in / Log out in menus.
 - Errors are one plain sentence ("Your library didn't load.") with Retry.
 - Accessibility labels say what a control does ("Save to Liked Songs",
   "Close Now Playing", "Collapse sidebar").
-- The tray menu: "Open Spotish"; then what plays (its title, Play/Pause,
+- The tray menu: "Open YTMFast"; then what plays (its title, Play/Pause,
   Next track, Previous track, Show Now Playing); then Exit. Exit, in the tray
   and as the user menu's last row, ends the app and the music.
 
@@ -595,8 +598,8 @@ playing bars rest.
 - Lists of equal items snap (`snapToInterval`, `snapToAlignment="start"`): a
   card row at a card's start, the library at a whole row. A list under a
   header of unknown height (a collection's tracks) does not snap.
-- Pictures load at the size they show: covers up to 40pt ask Spotify for the
-  64px variant (`src/data/images.ts`).
+- Pictures load at the size they show: covers up to 40pt ask Google's image hosts for the
+  120px variant (`src/data/images.ts`).
 - Nothing redraws every display frame without need. Shaders take their clock
   from native animated values, never `nsh.time` (which repaints the whole
   window at the display's rate), and pause with the music. The levels reach
@@ -607,7 +610,8 @@ playing bars rest.
 
 ## Obligations
 
-Not style, and never traded away: Spotify's ads play and are never blocked or
+Not style, and never traded away: YouTube's ads play and are never blocked or
 skipped; Premium is always offered to free accounts; the unofficial
-disclaimer ("Spotish is an unofficial client and is not affiliated with
-Spotify.") stays in About and the first-run sheet; NSH is credited.
+disclaimer ("YTMFast is an unofficial client and is not affiliated with
+YouTube or Google.") stays in About and the first-run sheet; NSH and Spotish
+are credited.

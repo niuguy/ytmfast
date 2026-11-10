@@ -1,4 +1,4 @@
-// Maps a system palette (an Omarchy theme's `colors.toml`) onto Spotish's
+// Maps a system palette (an Omarchy theme's `colors.toml`) onto YTMFast's
 // semantic tokens (theme.json). Pure: no NSH imports, so it is tested
 // headless with the palettes in ./fixtures.
 //
@@ -16,7 +16,7 @@ export interface SystemPalette {
   colors: Record<string, string>;
 }
 
-/** Spotish's color tokens (theme.json), by name. */
+/** YTMFast's color tokens (theme.json), by name. */
 export type ColorTokens = Record<string, string>;
 
 type Rgb = [number, number, number];
@@ -81,7 +81,7 @@ const BLACK = "#000000";
 const WHITE = "#ffffff";
 
 /**
- * Spotish's color tokens for `palette`: the surfaces, text, primary color and
+ * YTMFast's color tokens for `palette`: the surfaces, text, primary color and
  * charts, for `palette.mode`'s appearance. Every value is `#rrggbb`. Null when
  * the palette lacks a readable `background` or `foreground`.
  */

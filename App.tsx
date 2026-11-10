@@ -26,8 +26,6 @@ import { next, pause, play, player, previous, seek, toggle } from "./src/state/p
 
 /** How often a long-running app looks for updates again. */
 const UPDATE_EVERY = 6 * 60 * 60 * 1000;
-/** Whether to look for updates (needs nsh.json "updater"). */
-const UPDATES = false;
 
 /** The desktop integration: the tray and hide-on-close, the system's media
  * keys and Now Playing, Omarchy's theme, and updates. Each piece does
@@ -59,9 +57,8 @@ function installPlatform() {
     raise: shell.showWindow,
   });
   followSystemTheme();
-  // Updates stay off until YTMFast publishes its own releases (nsh.json
-  // "updater"); `src/platform/updater.ts` is ready for it.
-  if (UPDATES && !isDemo) {
+  // The demo (tests, the web, phones) is no release to update.
+  if (!isDemo) {
     const check = () => void checkForUpdates({ notify: (message, action) => announce(message, action) });
     check();
     const timer = setInterval(check, UPDATE_EVERY);

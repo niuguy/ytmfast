@@ -1,15 +1,18 @@
 # YTMFast
 
-**An unofficial, native client for YouTube Music, built with [NSH](https://nsh.dev).**
+[![CI](https://github.com/niuguy/ytmfast/actions/workflows/ci.yml/badge.svg)](https://github.com/niuguy/ytmfast/actions/workflows/ci.yml)
+
+**An unofficial, native client for YouTube Music, built with [NSH](https://nsh.dev), forked from
+[Spotish](https://github.com/huacnlee/spotish).**
 
 YTMFast is a lightweight, native desktop app that works with your Google account. Instead of running YouTube
 Music's web app in a full browser window, it runs YouTube Music's own web player out of sight in a browser you
 already have installed, and drives it from a fast, native interface drawn by NSH. Your account, free or Premium,
 does the playing, so the catalogue, your library and YouTube's ads all work exactly as YouTube intends.
 
-YTMFast is built on [Spotish](https://github.com/huacnlee/spotish), Jason Lee's native Spotify client: the
-interface, the design and the engine's browser and DevTools layers are Spotish's. The YouTube Music engine and
-bridge are YTMFast's own. See [NOTICE.md](NOTICE.md).
+YTMFast is forked from [Spotish](https://github.com/huacnlee/spotish), Jason Lee's native Spotify client built
+with NSH: the interface, the design and the engine's browser and DevTools layers are Spotish's. The YouTube Music
+engine and bridge are YTMFast's own. See [NOTICE.md](NOTICE.md).
 
 > **Unofficial — not affiliated with, endorsed by or sponsored by YouTube or Google.** YouTube Music is a trademark
 > of Google LLC. All music and artwork belong to their rights holders. A Google account is needed to see your
@@ -18,6 +21,34 @@ bridge are YTMFast's own. See [NOTICE.md](NOTICE.md).
 >
 > **YTMFast never blocks or skips YouTube's ads.** [YouTube Music Premium](https://www.youtube.com/musicpremium)
 > is how you remove them and support the artists you listen to.
+
+## Install
+
+**macOS / Linux** — run in Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/niuguy/ytmfast/main/scripts/install.sh | bash
+```
+
+**Windows** — run in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/niuguy/ytmfast/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the latest release and verifies its checksum; run it again to update (the app also
+offers updates itself). You can also [download a release](https://github.com/niuguy/ytmfast/releases/latest)
+manually.
+
+Builds: Apple silicon with macOS 14 or later, x86_64 Linux with GTK 4.14 and glibc 2.39 or later (such as Ubuntu
+24.04), and x86_64 Windows. On macOS the app is not notarized; the first launch may need approval in **System
+Settings → Privacy & Security**.
+
+## What is NSH?
+
+[NSH (Native Shell)](https://nsh.dev) is a Rust UI framework that renders one app through each platform's own native
+views — on macOS, Windows, Linux, iOS, Android, the web and even the terminal. YTMFast, like Spotish before it, is one
+Rust engine and one TSX interface, drawn natively, not in a web page.
 
 ## How it works
 

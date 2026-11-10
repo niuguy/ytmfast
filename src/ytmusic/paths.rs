@@ -1,10 +1,10 @@
-//! Where Spotish keeps its files: the browser profile (and with it the
+//! Where YTMFast keeps its files: the browser profile (and with it the
 //! sign-in), the Chromium log and the login-import marker. One data
 //! directory per OS, from the `dirs` crate:
 //!
-//! - Linux: `$XDG_DATA_HOME/spotish` (`~/.local/share/spotish`)
+//! - Linux: `$XDG_DATA_HOME/ytmfast` (`~/.local/share/ytmfast`)
 //! - macOS: `~/Library/Application Support/dev.ytmfast`
-//! - Windows: `%LOCALAPPDATA%\Spotish`
+//! - Windows: `%LOCALAPPDATA%\YTMFast`
 //!
 //! `YTMFAST_DATA_DIR` overrides it (tests, a second instance).
 
@@ -18,7 +18,7 @@ pub struct Paths {
 }
 
 impl Paths {
-    /// The platform's data directory for Spotish.
+    /// The platform's data directory for YTMFast.
     pub fn platform() -> Paths {
         if let Some(dir) = std::env::var_os("YTMFAST_DATA_DIR").filter(|d| !d.is_empty()) {
             return Paths::at(PathBuf::from(dir));

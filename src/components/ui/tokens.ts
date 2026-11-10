@@ -1,5 +1,5 @@
 // Motion tokens: the one set of durations, easings, distances and scales
-// every animation in Spotish uses (transitions, createMotion specs). Change
+// every animation in YTMFast uses (transitions, createMotion specs). Change
 // a value here, not in a component. The names follow transitions.dev's
 // token kinds (duration, easing, distance, blur, scale).
 

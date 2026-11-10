@@ -81,7 +81,7 @@ export function announce(text: string, action?: ToastAction): void {
 /** Logs a failure's details and shows the message `id` for it. */
 export function report(id: MessageId, error: unknown, action?: ToastAction): BackendError {
   const parsed = errorOf(error);
-  console.warn(`spotish: ${id}: ${parsed.code}: ${parsed.message}`);
+  console.warn(`ytmfast: ${id}: ${parsed.code}: ${parsed.message}`);
   notify(id, action);
   return parsed;
 }

@@ -1,10 +1,10 @@
-//! The one-time import of an existing browser's Spotify login
+//! The one-time import of an existing browser's YouTube login
 //! (`YTMFAST_PROFILE`): its cookies, the key they are encrypted with
-//! (`Local State`) are copied into Spotish's own
+//! (`Local State`) are copied into YTMFast's own
 //! profile, once.
 //!
 //! "Once" is a marker file in the data directory. The import runs only while
-//! the marker is absent *and* Spotish's profile has no cookies of its own; a
+//! the marker is absent *and* YTMFast's profile has no cookies of its own; a
 //! sign-in or sign-out writes the marker, so a sign-out is never undone by a
 //! re-import and a fresh sign-in is never overwritten.
 //!
@@ -31,7 +31,7 @@ const COOKIE_DBS: [&str; 2] = ["Default/Network/Cookies", "Default/Cookies"];
 pub enum Outcome {
     /// The marker says the import is settled.
     Settled,
-    /// Spotish's profile has cookies of its own (the marker is written now).
+    /// YTMFast's profile has cookies of its own (the marker is written now).
     HasOwnLogin,
     /// No `YTMFAST_PROFILE` to import from.
     NoSource,
@@ -66,7 +66,7 @@ pub fn has_cookies(profile: &Path) -> bool {
 }
 
 /// Imports the login of `source` (a Chromium profile directory) into
-/// `paths`'s profile, unless the import is settled or Spotish has a login of
+/// `paths`'s profile, unless the import is settled or YTMFast has a login of
 /// its own.
 pub fn import_once(paths: &Paths, source: Option<&Path>) -> Outcome {
     if settled(paths) {
@@ -192,7 +192,7 @@ pub fn copy_database(from: &Path, to: &Path) -> Result<(), String> {
 }
 
 /// Backs `from` up into `to`. The other browser's own database is opened
-/// read-only (`writable: false`), so Spotish never writes to it.
+/// read-only (`writable: false`), so YTMFast never writes to it.
 fn backup(from: &Path, to: &Path, writable: bool) -> Result<(), String> {
     let mode = if writable { OpenFlags::SQLITE_OPEN_READ_WRITE } else { OpenFlags::SQLITE_OPEN_READ_ONLY };
     let source =

@@ -40,7 +40,7 @@ pub struct Snapshot {
     pub player: Player,
     /// Where the session is.
     pub health: Health,
-    /// Whether a Spotify account is signed in, from the session cookie;
+    /// Whether a Google account is signed in, from the session cookie;
     /// `None` while unknown.
     pub signed_in: Option<bool>,
     /// Counts the player's new auth tokens: data that failed may now load.
@@ -55,7 +55,7 @@ pub enum Request {
     SignIn,
     /// Closes the sign-in window without signing in.
     CancelSignIn,
-    /// Signs out of Spotify.
+    /// Signs out of YouTube.
     SignOut,
     /// Tries to start the player again now.
     Retry,
@@ -158,7 +158,7 @@ impl Session {
         self.send(Request::CancelSignIn);
     }
 
-    /// Signs the player out of Spotify.
+    /// Signs the player out of YouTube.
     pub fn sign_out(&self) {
         self.send(Request::SignOut);
     }

@@ -67,8 +67,9 @@ jobs:
       - name: Bridge
         run: |
           node --check src/bridge/bridge.js
+          node src/bridge/gen-source.mjs --check
           shopt -s nullglob
-          tests=(src/bridge/*.test.mjs)
+          tests=(src/bridge/tests/*.test.mjs)
           if [ ${#tests[@]} -gt 0 ]; then
             node --test "${tests[@]}"
           else

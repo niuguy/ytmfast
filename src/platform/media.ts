@@ -11,8 +11,8 @@
 //     toggle: store.toggle,
 //     play: () => { if (!store.player().playing) store.toggle(); },
 //     pause: () => { if (store.player().playing) store.toggle(); },
-//     next: () => store.control("next", () => store.spotify.next()),
-//     previous: () => store.control("previous", () => store.spotify.previous()),
+//     next: () => store.control("next", () => store.ytm.next()),
+//     previous: () => store.control("previous", () => store.ytm.previous()),
 //     seek: store.seek,
 //     raise: shell.showWindow, // installDesktopShell's handle
 //   });
