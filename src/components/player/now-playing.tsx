@@ -16,6 +16,7 @@ import { titleBarArea } from "../ui/title-bar";
 import { MusicLight } from "../ui/toolbar-fx";
 import { animateLayoutOn, enter } from "../ui/motion";
 import { LikeButton, NEW_COVER, NowPlayingSummary, SeekBar, TransportControls, VolumeControl } from "./parts";
+import { CurrentSongMenu, QueueButton } from "./player-bar";
 
 function NowPlayingContent() {
   // A new track's cover settles in, as in the bar.
@@ -62,6 +63,7 @@ function NowPlayingContent() {
       <View class="flex-row items-center gap-4" style={enter("fadeInUp", 140)}>
         <NowPlayingSummary large cover={0} />
         <LikeButton size={24} />
+        <CurrentSongMenu />
       </View>
       <View style={enter("fadeInUp", 200)}>
         <SeekBar quiet />
@@ -113,6 +115,7 @@ function NowPlayingContent() {
         {/* The corner: the lyrics, the volume (always open here, nothing to
             reveal) and the light. */}
         <View class="flex-row items-center gap-1">
+          <QueueButton />
           <IconButton
             name="microphone"
             label={lyricsShown() ? "Hide lyrics" : "Show lyrics"}

@@ -14,6 +14,20 @@ export const MESSAGES = {
   likeFailed: "Couldn't update Liked Songs. Try again.",
   signInFailed: "Couldn't open the Google sign-in. Try again.",
   retryFailed: "YouTube Music still isn't available. Quit YTMFast and open it again.",
+  playsNext: "Will play next.",
+  addedToQueue: "Added to the queue.",
+  queueFailed: "Couldn't change the queue. Try again.",
+  radioFailed: "Couldn't start the radio. Try again.",
+  savedToLibrary: "Saved to your library.",
+  removedFromLibrary: "Removed from your library.",
+  subscribed: "Subscribed.",
+  unsubscribed: "Unsubscribed.",
+  liked: "Added to Liked Songs.",
+  disliked: "Disliked: you'll hear less like this.",
+  addedToPlaylist: "Added to the playlist.",
+  playlistMade: "Playlist made.",
+  removedFromPlaylist: "Removed from the playlist.",
+  libraryFailed: "Couldn't update your library. Try again.",
 } as const;
 
 export type MessageId = keyof typeof MESSAGES;

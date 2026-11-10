@@ -8,6 +8,7 @@ import { nav, type Route } from "../nav";
 import { CollectionPage } from "../pages/collection";
 import { HomePage } from "../pages/home";
 import { SearchPage } from "../pages/search";
+import { BrowsePage, EXPLORE_URI } from "../pages/browse";
 import { health, retry } from "../state/session";
 
 function page(route: Route) {
@@ -18,6 +19,10 @@ function page(route: Route) {
       return <SearchPage />;
     case "collection":
       return <CollectionPage uri={route.uri} />;
+    case "explore":
+      return <BrowsePage uri={EXPLORE_URI} root />;
+    case "page":
+      return <BrowsePage uri={route.uri} />;
     default:
       return <HomePage />;
   }

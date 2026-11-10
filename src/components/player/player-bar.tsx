@@ -3,7 +3,8 @@
 
 import { effect, Text, token, View, windowSize } from "nsh";
 import { Button, Toolbar } from "nsh/base";
-import { openLyrics, setNowPlayingOpen } from "../../state/overlays";
+import { openLyrics, queueOpen, setNowPlayingOpen, setQueueOpen } from "../../state/overlays";
+import { SongMenuButton } from "../library/menus";
 import { hasTrack, player, toggle } from "../../state/player";
 import { ready } from "../../state/session";
 import { Cover, focusRing, IconButton, PlayButton } from "../ui/controls";
@@ -16,6 +17,22 @@ import { Region } from "../ui/regions";
 import { barSize } from "../layout";
 import { enter } from "../ui/motion";
 import { LikeButton, NowPlayingSummary, SeekBar, TransportControls, VolumeControl } from "./parts";
+
+/** The playing song's menu (dislike it, add it to a playlist, its radio…);
+ * nothing during an ad. */
+export function CurrentSongMenu() {
+  const p = () => player();
+  return (
+    <If when={hasTrack() && !p().ad && !!p().trackUri}>
+      <SongMenuButton song={{ uri: p().trackUri, name: p().title }} />
+    </If>
+  );
+}
+
+/** Opens and closes the queue panel. */
+export function QueueButton() {
+  return <IconButton name="queue" label="Queue" hint pressed={queueOpen()} disabled={!hasTrack()} onPress={() => setQueueOpen(!queueOpen())} />;
+}
 
 /** The desktop's bar: what plays, the transport over the position, the
  * volume, in a flat pill floating over the pages; it rises in. */
@@ -59,8 +76,10 @@ export function PlayerBar() {
                 <View class="min-w-0 flex-1 flex-row items-center gap-2">
                   <NowPlayingSummary openable round cover={44} />
                   <LikeButton />
+                  <CurrentSongMenu />
                 </View>
                 <TransportControls quiet />
+                <QueueButton />
                 <LightMenu placement="top" />
               </>
             }
@@ -73,9 +92,12 @@ export function PlayerBar() {
             <View class="h-11 flex-row items-center gap-2">
               <NowPlayingSummary openable round center cover={44} />
               <LikeButton />
+              <CurrentSongMenu />
             </View>
             <View class="h-10 flex-row items-center">
-              <View class="w-9" />
+              <View class="w-9">
+                <QueueButton />
+              </View>
               <View class="min-w-0 flex-1 items-center">
                 <TransportControls quiet minimal={tiny()} />
               </View>
@@ -92,6 +114,7 @@ export function PlayerBar() {
               edge on every side (72 = 44 + 2 × 14). */}
           <NowPlayingSummary openable round cover={44} />
           <LikeButton />
+          <CurrentSongMenu />
         </View>
         <View class="max-w-180 flex-1 items-center gap-1">
           <TransportControls quiet />
@@ -102,6 +125,7 @@ export function PlayerBar() {
               here, balancing what plays on the left; the light's menu at the
               very end. */}
           <IconButton name="microphone" label="Lyrics" hint disabled={!hasTrack()} onPress={openLyrics} />
+          <QueueButton />
           <VolumeControl quiet />
           <LightMenu placement="top" />
         </View>

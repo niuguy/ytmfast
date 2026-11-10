@@ -9,7 +9,8 @@ import { layout } from "./src/components/layout";
 import { NowPlayingSheet } from "./src/components/player/now-playing";
 import { Toaster } from "./src/components/ui/feedback";
 import { TitleBar } from "./src/components/ui/title-bar";
-import { AboutDialog, FirstRunSheet, ShortcutsDialog, SigningInDialog } from "./src/pages/dialogs";
+import { AboutDialog, FirstRunSheet, NewPlaylistDialog, ShortcutsDialog, SigningInDialog } from "./src/pages/dialogs";
+import { QueuePanel } from "./src/components/player/queue";
 import { bindRegionKeys } from "./src/components/ui/regions";
 import { DesktopShell } from "./src/shells/desktop";
 import { PhoneShell } from "./src/shells/phone";
@@ -98,6 +99,8 @@ function App() {
         <TerminalShell />
       </If>
       <NowPlayingSheet />
+      <QueuePanel />
+      <NewPlaylistDialog />
       <AboutDialog />
       <ShortcutsDialog />
       <SigningInDialog />

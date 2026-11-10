@@ -3,13 +3,14 @@
 
 import { List, signal, Text, untracked, View } from "nsh";
 import { type Item, opens } from "../../backend/types";
-import { open } from "../../nav";
+import { open, type Route } from "../../nav";
 import { isPlayingContext, playItem, toggleCollection } from "../../state/player";
 import { ready } from "../../state/session";
 import { Cover, focusRing, keyRing, PlayButton, Pressable, SectionTitle, terminal } from "../ui/controls";
 import { createListKeys, KEYS_VIEWABILITY, type ListGroup, type ListKeys } from "../ui/list-keys";
 import type { IconName } from "../ui/icons";
 import { listItemEntrance, type ListWave, WAVE } from "../ui/motion";
+import { ItemContextMenu } from "./menus";
 
 /** The glyph an item shows while it has no image. */
 export function fallbackIcon(kind: string): IconName {
@@ -19,9 +20,15 @@ export function fallbackIcon(kind: string): IconName {
   return "music";
 }
 
-/** Opens an item's page, or plays it when it has none (a track). */
+/** The page an item opens: a browse page (a mood, Explore's own pages), or
+ * a collection's. */
+export function routeOf(item: Item): Route {
+  return item.kind === "page" ? { name: "page", uri: item.uri } : { name: "collection", uri: item.uri };
+}
+
+/** Opens an item's page, or plays it when it has none (a track, a mix). */
 export function activate(item: Item): void {
-  if (opens(item)) open({ name: "collection", uri: item.uri });
+  if (opens(item)) open(routeOf(item));
   else playItem(item);
 }
 
@@ -53,7 +60,9 @@ export function Card(props: {
 }) {
   const width = () => props.width ?? CARD_WIDTH;
   const playing = () => isPlayingContext(props.item.uri);
-  const play = () => (opens(props.item) ? toggleCollection(props.item.uri) : playItem(props.item));
+  // A page (a mood) has nothing to play: its button opens it.
+  const play = () =>
+    props.item.kind === "page" ? activate(props.item) : opens(props.item) ? toggleCollection(props.item.uri) : playItem(props.item);
   // Made once, here: inside the Button's style it would be made (and
   // played) again whenever the Button's props re-run. Its cover flips open
   // (one of four ways) and its words rise, each a little after the card
@@ -69,6 +78,7 @@ export function Card(props: {
     }),
   );
   return (
+    <ItemContextMenu item={props.item}>
     <Pressable
       focusable={!props.keys}
       accessibilityLabel={`${props.item.name}, ${props.item.subtitle}`}
@@ -113,6 +123,7 @@ export function Card(props: {
         <Text class="line-clamp-2 text-xs text-muted-foreground">{props.item.subtitle}</Text>
       </View>
     </Pressable>
+    </ItemContextMenu>
   );
 }
 

@@ -52,14 +52,18 @@ export function AppDialog(props: {
   );
 }
 
-/** A panel at an edge: the phone's drawer (`left`), Now Playing and the
- * first-run sheet (`bottom`). */
+/** A panel at an edge: the phone's drawer (`left`), the desktop's queue
+ * (`right`), Now Playing, the first-run sheet and the phone's queue
+ * (`bottom`). */
 export function AppSheet(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  side: "left" | "bottom";
+  side: "left" | "right" | "bottom";
   /** Covers the whole screen (Now Playing). */
   full?: boolean;
+  /** A bottom sheet that takes most of the screen (the queue's list
+   * scrolls in it). */
+  tall?: boolean;
   closeOnSwipe?: boolean;
   testID?: string;
   children?: JSX.Element;
@@ -67,7 +71,8 @@ export function AppSheet(props: {
   const panel = () => {
     if (props.full) return "h-full w-full bg-background";
     if (props.side === "left") return "h-full w-80 max-w-full bg-background";
-    return "max-h-full w-full rounded-t-(--radius-panel) bg-popover pb-[env(safe-area-inset-bottom)]";
+    if (props.side === "right") return "h-full w-96 max-w-full border-l border-border bg-background";
+    return `${props.tall ? "h-[85%]" : "max-h-full"} w-full rounded-t-(--radius-panel) bg-popover pb-[env(safe-area-inset-bottom)]`;
   };
   return (
     <Sheet
@@ -87,7 +92,7 @@ export function AppSheet(props: {
       </If>
       {/* The content rises in behind the sliding panel. */}
       <If when={!terminal} else={props.children}>
-        <View class={props.full || props.side === "left" ? "flex-1" : ""} style={enter("fadeInUp", 90)}>
+        <View class={props.full || props.side !== "bottom" || props.tall ? "flex-1" : ""} style={enter("fadeInUp", 90)}>
           {props.children}
         </View>
       </If>

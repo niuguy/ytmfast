@@ -11,6 +11,7 @@ import type { ListKeys } from "../ui/list-keys";
 import { PlayingBars } from "../ui/playing";
 import { Icon } from "../ui/icons";
 import { listItemEntrance, type ListWave, WAVE } from "../ui/motion";
+import { type MenuContext, SongContextMenu, SongMenuButton } from "./menus";
 
 /** The header row above a track list. */
 export function TrackHeader(props: { showAlbum: boolean }) {
@@ -31,6 +32,8 @@ export function TrackHeader(props: { showAlbum: boolean }) {
       <View class="w-12 items-end">
         <Icon name="clock" size={14} color="muted-foreground" />
       </View>
+      {/* Over the rows' "…" buttons. */}
+      <View class="w-8" />
     </View>
   );
 }
@@ -52,6 +55,9 @@ export function TrackRow(props: {
   /** Its list's keyboard: the row is no stop of Tab then, and shows the
    * list's highlight. */
   keys?: ListKeys;
+  /** The collection it is listed in, for its menu (a playlist of the
+   * account's own can take it out). */
+  context?: MenuContext;
   onPress: () => void;
 }) {
   // The row slides in from the right, its cover flips open and its words
@@ -73,7 +79,10 @@ export function TrackRow(props: {
   const playing = () => current() && isPlaying();
   const label = () => (props.track ? `${props.track.name}, ${props.track.artists}` : "");
   const keyed = () => props.keys?.isActive(props.number) ?? false;
+  const song = () =>
+    props.track ? { uri: props.track.uri, name: props.track.name, albumUri: props.track.albumUri, uid: props.track.uid } : undefined;
   return (
+    <SongContextMenu song={song()} context={props.context}>
     <Pressable
       focusable={!props.keys}
       accessibilityLabel={label()}
@@ -132,6 +141,16 @@ export function TrackRow(props: {
         <Text class="line-clamp-1 min-w-0 flex-1 text-xs text-muted-foreground">{props.track?.album ?? ""}</Text>
       </If>
       <Digits class="w-12 text-right text-xs text-muted-foreground">{props.track ? clock(props.track.durationMs) : ""}</Digits>
+      {/* The song's menu: shown on hover (and while open), always in a
+          terminal. */}
+      <If when={song()}>
+        {(s) => (
+          <View class={terminal ? "" : `w-8 items-center opacity-0 ${LAYER} group-hover:opacity-100 focus-within:opacity-100`}>
+            <SongMenuButton song={s()} context={props.context} />
+          </View>
+        )}
+      </If>
     </Pressable>
+    </SongContextMenu>
   );
 }

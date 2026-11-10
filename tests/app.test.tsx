@@ -284,9 +284,11 @@ test("? shows the keyboard shortcuts", async () => {
 test("Ctrl and the arrows move between regions; the arrows and Return work inside them", async () => {
   const app = await desktop({ premium: true });
   await app.waitFor("Good evening, Ada");
-  // The sidebar: Home, then on down into the library, whose first entry is
-  // Liked Songs.
+  // The sidebar: Home, Explore and History, then on down into the library,
+  // whose first entry is Liked Songs.
   await app.keyboard.press("ctrl+left");
+  await app.keyboard.press("down");
+  await app.keyboard.press("down");
   await app.keyboard.press("down");
   await app.keyboard.press("enter");
   await app.waitFor("role:header[Liked Songs]");
@@ -331,4 +333,121 @@ test("the music light switches to Current, and Random picks another for each tra
   // The next track brings another.
   await app.press("id:player >> role:button[Next]");
   await app.waitUntil(() => shown() !== undefined && shown() !== first);
+});
+
+// --- The queue, radio, the library, discovery -----------------------------------
+
+test("a song's menu plays it next; the queue shows it, takes songs out and jumps to one", async () => {
+  const app = await desktop({ premium: true });
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Paper Lanterns]");
+  await app.press("role:button[First Light, The Quiet Fields]");
+  await app.waitFor("id:player >> role:button[Pause]");
+  // Play next from the row's "…" menu.
+  await app.press("role:button[More for Kites]");
+  await app.press("role:menuitem[Play next]");
+  await app.waitFor("Will play next.");
+  await app.press("id:player >> role:button[Queue]");
+  await app.waitFor("id:queue-panel >> text:Next up");
+  // Kites is next, right after what plays.
+  const shown = app.texts();
+  expect(shown[shown.indexOf("Next up") + 1]).toBe("Kites");
+  // Out of the queue.
+  await app.press("id:queue-panel >> role:button[Remove Window Seat from the queue]");
+  await app.waitFor("id:queue-panel >> text:Window Seat", { state: "gone" });
+  // Pressed, a song plays.
+  await app.press("id:queue-panel >> role:button[Hollow Pines, The Quiet Fields]");
+  await app.waitFor("id:player >> text:Hollow Pines");
+});
+
+test("a card's own menu starts its radio", async () => {
+  const app = await desktop({ premium: true });
+  await app.waitFor("Good evening, Ada");
+  await app.rightClick("role:button[Neon Orchard, 2023 · Mira Vale]");
+  await app.press("role:menuitem[Start radio]");
+  await app.waitFor("id:player >> text:Orchard");
+});
+
+test("Explore lists new releases and moods; a mood opens its own page", async () => {
+  const app = await desktop();
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Explore]");
+  await app.waitFor("role:header[Explore]");
+  expect(app.texts()).toContain("New albums & singles");
+  await app.press("role:button[Chill]");
+  await app.waitFor("role:header[Chill]");
+  expect(app.texts()).toContain("Chill mixes");
+});
+
+test("Home's chips filter it, one at a time", async () => {
+  const app = await desktop();
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Relax]");
+  await app.waitFor("Relax mixes");
+  await app.press("role:button[Relax]");
+  await app.waitFor("Made for you");
+});
+
+test("Search narrows to songs, a page at a time, and suggests queries", async () => {
+  const app = await desktop();
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Search]");
+  await app.type("label:Search YouTube Music", "the");
+  await app.submit("label:Search YouTube Music");
+  await app.waitFor("role:button[All]");
+  await app.press("role:button[Songs]");
+  await app.waitFor("role:button[Show more]");
+  const before = app.texts().filter((t) => t === "The Quiet Fields").length;
+  await app.press("role:button[Show more]");
+  await app.waitUntil(() => app.texts().filter((t) => t === "The Quiet Fields").length > before);
+  // What YouTube Music would suggest for it.
+  await app.clear("label:Search YouTube Music");
+  await app.type("label:Search YouTube Music", "low");
+  await app.waitFor("role:button[Search for low harbor]");
+});
+
+test("an album is saved to the library, and an artist subscribed to, from their pages", async () => {
+  const app = await desktop();
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Neon Orchard, 2023 · Mira Vale]");
+  await app.press("role:button[Save to library]");
+  await app.waitFor("Saved to your library.");
+  await app.waitFor("role:button[Remove from library]");
+  await app.press("role:button[Home]");
+  await app.press("role:button[Low Harbor, Artist]");
+  await app.waitFor("role:button[Unsubscribe]");
+});
+
+test("a new playlist is made from a song's menu; a playlist of one's own takes songs out", async () => {
+  const app = await desktop();
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Paper Lanterns]");
+  await app.rightClick("role:button[Kites, The Quiet Fields]");
+  await app.press("role:menuitem[Add to playlist]");
+  await app.press("role:menuitem[New playlist…]");
+  await app.waitFor("id:new-playlist");
+  await app.type("label:Playlist name", "Night Drive");
+  await app.press("role:button[Create]");
+  await app.waitFor("Playlist made.");
+  await app.waitFor("Night Drive");
+  // Road Trip is the account's own: a song comes out of it.
+  await app.press("role:button[Road Trip]");
+  await app.waitFor("role:header[Road Trip]");
+  await app.waitFor("role:button[Slow River, The Quiet Fields]");
+  await app.rightClick("role:button[Slow River, The Quiet Fields]");
+  await app.press("role:menuitem[Remove from this playlist]");
+  await app.waitFor("Removed from the playlist.");
+  await app.waitFor("role:button[Slow River, The Quiet Fields]", { state: "gone" });
+});
+
+test("History lists what was played; the player's menu dislikes the song", async () => {
+  const app = await desktop({ premium: true });
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[History]");
+  await app.waitFor("role:header[History]");
+  await app.press("role:button[Play]");
+  await app.waitFor("id:player >> role:button[Pause]");
+  await app.press("id:player >> role:button[More for Kites]");
+  await app.press("role:menuitem[Dislike]");
+  await app.waitFor("Disliked: you'll hear less like this.");
 });

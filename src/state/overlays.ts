@@ -10,6 +10,25 @@ const shortcuts = signal(false);
 const drawer = signal(false);
 const firstRun = signal(false);
 const lyrics = signal(false);
+const queuePanel = signal(false);
+/** The "new playlist" dialog: open, with the song it starts with (or "" for
+ * none); null while closed. */
+const newPlaylist = signal<{ trackUri: string } | null>(null);
+
+/** Whether the queue panel is open (tracked). */
+export const queueOpen = () => queuePanel();
+export function setQueueOpen(open: boolean): void {
+  queuePanel.set(open);
+}
+
+/** The "new playlist" dialog's song, while it is open (tracked). */
+export const newPlaylistFor = () => newPlaylist();
+export function openNewPlaylist(trackUri: string): void {
+  newPlaylist.set({ trackUri });
+}
+export function closeNewPlaylist(): void {
+  newPlaylist.set(null);
+}
 
 /** Set once the first-run sheet was closed. */
 const FIRST_RUN_DONE = "firstRun:done";
@@ -89,5 +108,7 @@ export function closeOverlays(): void {
     nowPlaying.set(false);
     about.set(false);
     drawer.set(false);
+    queuePanel.set(false);
+    newPlaylist.set(null);
   });
 }

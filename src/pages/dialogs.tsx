@@ -2,7 +2,10 @@
 // and the first-run sheet. Each is `nsh/base`'s `Dialog` or `Sheet`, which
 // own focus, Escape and back.
 
-import { keymap, Scroll, Text, View } from "nsh";
+import { keymap, Scroll, signal, Text, token, View } from "nsh";
+import { Input } from "nsh/base";
+import { createPlaylist } from "../state/library";
+import { closeNewPlaylist, newPlaylistFor } from "../state/overlays";
 import { ActionButton, IconButton, terminal, TextLink } from "../components/ui/controls";
 import { AppDialog, AppSheet } from "../components/ui/overlays";
 import { NSH_URL, openExternal, openPremium, REPO_URL, SPOTISH_URL, TERMS_URL, YTM_URL } from "../state/links";
@@ -137,6 +140,54 @@ export function AboutDialog() {
           <TextLink label="Forked from Spotish" onPress={() => openExternal(SPOTISH_URL)} />
         </View>
       </Scroll>
+    </AppDialog>
+  );
+}
+
+/** "New playlist": a name, then Create (the song it was opened for goes
+ * in). A private playlist of the account's own. */
+export function NewPlaylistDialog() {
+  const name = signal("");
+  const busy = signal(false);
+  const create = async () => {
+    const pending = newPlaylistFor();
+    if (!pending || !name().trim() || busy()) return;
+    busy.set(true);
+    const made = await createPlaylist(name().trim(), pending.trackUri || null);
+    busy.set(false);
+    if (made) name.set("");
+  };
+  return (
+    <AppDialog
+      open={newPlaylistFor() !== null}
+      onOpenChange={(next) => {
+        if (!next) closeNewPlaylist();
+      }}
+      testID="new-playlist"
+    >
+      <View class={terminal ? "gap-1" : "gap-4 p-6"}>
+        <Text role="header" class="text-xl font-bold text-foreground">
+          New playlist
+        </Text>
+        <View class={terminal ? "border border-border" : "h-11 flex-row items-center rounded-(--radius) border border-border bg-secondary px-3 focus-within:border-foreground"}>
+          <Input
+            value={name()}
+            onChange={({ value }) => name.set(value)}
+            onSubmit={() => void create()}
+            placeholder="Name"
+            accessibilityLabel="Playlist name"
+            returnKeyType="done"
+            autoFocus
+            class="flex-1 text-base text-foreground"
+            style={{ placeholderColor: token("muted-foreground"), caretColor: token("primary") }}
+          />
+        </View>
+        <Text class="text-xs text-muted-foreground">Only you can see it; change that on YouTube Music.</Text>
+        <View class="flex-row justify-end gap-2">
+          <ActionButton label="Cancel" onPress={closeNewPlaylist} />
+          <ActionButton label="Create" variant="primary" disabled={!name().trim() || busy()} onPress={() => void create()} />
+        </View>
+      </View>
     </AppDialog>
   );
 }

@@ -50,6 +50,19 @@ Settings → Privacy & Security**.
 views — on macOS, Windows, Linux, iOS, Android, the web and even the terminal. YTMFast, like Spotish before it, is one
 Rust engine and one TSX interface, drawn natively, not in a web page.
 
+## Features
+
+- **Home, Explore and Search**: Home's filters (Relax, Workout, …); Explore's new releases, charts, and moods and
+  genres; search with suggestions, and tabs for songs, albums, artists, playlists and videos with more pages.
+- **The queue**: see what plays next, jump to a song, take one out; *Play next* and *Add to queue* from any song,
+  album or playlist.
+- **Radio**: a mix from any song, album, playlist or artist.
+- **Your library**: Liked Songs, saved albums and playlists, subscriptions and History; save and subscribe from a
+  page, like or dislike any song, make playlists and add songs to them, take songs out of your own.
+- **Now Playing** with lyrics, the system's media keys, and the music light.
+
+Every song has a menu (its "…" button, or a right click) and so does every album, playlist and artist.
+
 ## How it works
 
 - The **engine** (`src/ytmusic/`, Rust) starts your browser without a window, loads `music.youtube.com`, and

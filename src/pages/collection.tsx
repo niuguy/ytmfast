@@ -27,14 +27,60 @@ import {
 } from "../components/ui/feedback";
 import { collectionQuery } from "../data/queries";
 import { isCurrentTrack, isPlayingContext, playFrom, rememberTracks, toggleCollection } from "../state/player";
-import { ready } from "../state/session";
+import { ready, signedIn } from "../state/session";
+import { setSaved, setSubscribed } from "../state/library";
+import { ItemMenuButton } from "../components/library/menus";
+import { IconButton } from "../components/ui/controls";
 
 const KIND_LABEL: Record<string, string> = {
   album: "Album",
   artist: "Artist",
   collection: "Playlist",
   playlist: "Playlist",
+  history: "Recently played",
 };
+
+/** Plays a collection: from its start, or for History (a list of plays, not
+ * one queue) its newest song. */
+function playAll(data: Collection, uri: string): void {
+  if (data.header.kind === "history") {
+    const first = data.tracks[0];
+    if (first) playFrom(uri, first.uri, first);
+  } else toggleCollection(uri);
+}
+
+/** The header's actions beside its play button: save to the library, or
+ * subscribe to the artist, where the page can; and its menu. */
+function HeaderActions(props: { data: Collection }) {
+  const header = () => props.data.header;
+  const savable = () => header().saved != null && signedIn() === true;
+  const subscribable = () => header().subscribed != null && signedIn() === true;
+  return (
+    <View class="flex-row items-center gap-1">
+      <If when={savable()}>
+        <IconButton
+          name={header().saved ? "bookmarkFilled" : "bookmark"}
+          label={header().saved ? "Remove from library" : "Save to library"}
+          pressed={!!header().saved}
+          hint
+          onPress={() => void setSaved(header().uri, !header().saved)}
+        />
+      </If>
+      <If when={subscribable()}>
+        <IconButton
+          name={header().subscribed ? "userCheck" : "userPlus"}
+          label={header().subscribed ? "Unsubscribe" : "Subscribe"}
+          pressed={!!header().subscribed}
+          hint
+          onPress={() => void setSubscribed(header().uri, !header().subscribed)}
+        />
+      </If>
+      <If when={header().kind !== "history"}>
+        <ItemMenuButton item={header()} saved={header().saved} />
+      </If>
+    </View>
+  );
+}
 
 function Header(props: { uri: string; data: Collection; entrance: boolean; group: ListGroup; reveal: () => void }) {
   // Its layers come in one after another: at once when the page shows
@@ -59,7 +105,7 @@ function Header(props: { uri: string; data: Collection; entrance: boolean; group
     axis: "horizontal",
     group: props.group,
     order: () => 0,
-    activate: () => canPlay() && toggleCollection(props.uri),
+    activate: () => canPlay() && playAll(props.data, props.uri),
     reveal: props.reveal,
   });
   const play = (size: number) => (
@@ -75,7 +121,7 @@ function Header(props: { uri: string; data: Collection; entrance: boolean; group
         playing={isPlayingContext(props.uri)}
         size={size}
         disabled={!canPlay()}
-        onPress={() => toggleCollection(props.uri)}
+        onPress={() => playAll(props.data, props.uri)}
       />
     </View>
   );
@@ -97,6 +143,7 @@ function Header(props: { uri: string; data: Collection; entrance: boolean; group
           src={header().image}
           round={header().kind === "artist"}
           liked={header().kind === "collection"}
+          fallback={header().kind === "history" ? "history" : undefined}
           class={phone() ? "w-full shadow-xl" : "w-24 shadow-xl"}
         />
       </View>
@@ -120,7 +167,10 @@ function Header(props: { uri: string; data: Collection; entrance: boolean; group
           <Text class="text-xs text-muted-foreground">{header().subtitle}</Text>
         </View>
       </View>
-      <View class="shrink-0" style={playIn}>
+      <View class={`shrink-0 flex-row items-center gap-2 ${phone() ? "" : ""}`} style={playIn}>
+        <If when={!terminal}>
+          <HeaderActions data={props.data} />
+        </If>
         {play(phone() ? 48 : 44)}
       </View>
     </View>
@@ -216,6 +266,7 @@ function Tracks(props: { uri: string; data: Collection; instant: boolean }) {
           disabled={!ready()}
           wave={wave}
           keys={keys}
+          context={{ uri: props.uri, editable: !!props.data.header.editable }}
           onPress={() => play(index())}
         />
       )}

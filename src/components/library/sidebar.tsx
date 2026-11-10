@@ -7,7 +7,7 @@ import { type AnimatedValue, createAnimatedValue, createMotion, effect, fpsEnabl
 import { AlertDialog, Button, Menu, MenuItem, MenuSeparator } from "nsh/base";
 import type { Item } from "../../backend/types";
 import { libraryQuery, meQuery } from "../../data/queries";
-import { currentRoute, type Route, switchTo } from "../../nav";
+import { currentRoute, EXPLORE, HISTORY, HOME, type Route, SEARCH, switchTo } from "../../nav";
 import { NSH_URL, openExternal, openPremium, REPO_URL, YTM_URL } from "../../state/links";
 import { setAboutOpen, setDrawerOpen } from "../../state/overlays";
 import { isCurrentContext, isPlayingContext, player } from "../../state/player";
@@ -78,21 +78,40 @@ function SlidingSelection(props: { index: () => number; top: number; scroll?: An
   );
 }
 
-/** The nav panel's selection: Home (and Search, where the panel lists it). */
+/** One of the nav panel's entries. */
+interface NavEntry {
+  icon: IconName;
+  label: string;
+  route: Route;
+}
+
+/** Whether `route` is the page shown. */
+function isShown(route: Route): boolean {
+  const now = currentRoute();
+  if (now.name !== route.name) return false;
+  return !("uri" in route) || ("uri" in now && now.uri === route.uri);
+}
+
+/** The nav panel's entries: Home, Explore, Search (the desktop lists it in
+ * the header instead), and History while signed in. */
+function navEntries(): NavEntry[] {
+  const entries: NavEntry[] = [
+    { icon: "home", label: "Home", route: HOME },
+    { icon: "compass", label: "Explore", route: EXPLORE },
+  ];
+  if (layout() !== "desktop" || terminal) entries.push({ icon: "search", label: "Search", route: SEARCH });
+  if (signedIn() === true) entries.push({ icon: "history", label: "History", route: HISTORY });
+  return entries;
+}
+
+/** The nav panel's selection: the entry of the page shown, if any. */
 function NavIndicator() {
-  const index = () => {
-    const name = currentRoute().name;
-    if (name === "home") return 0;
-    // The desktop lists Search in the header, not here.
-    if (name === "search" && layout() !== "desktop") return 1;
-    return -1;
-  };
-  return <SlidingSelection index={index} top={8} />;
+  return <SlidingSelection index={() => navEntries().findIndex((e) => isShown(e.route))} top={8} />;
 }
 
 /** One of the main pages. */
 function NavItem(props: { icon: IconName; label: string; route: Route; compact: boolean; keys: ListKeys; index: number }) {
-  const selected = () => currentRoute().name === props.route.name;
+  const selected = () => isShown(props.route);
   const hover = iconMotion();
   return (
     <View onMouseEnter={() => hover.play(props.icon)}>
@@ -464,14 +483,15 @@ export function Sidebar(props: { compact?: boolean }) {
   // The pages and the library are one region: one stop of Tab, the arrows
   // going down through the pages into the library and back.
   const group = createListGroup({ region: "sidebar" });
-  const routes: Route[] = [{ name: "home" }, { name: "search" }];
-  const showsSearch = () => layout() !== "desktop" || terminal;
   const nav = createListKeys({
-    count: () => (showsSearch() ? 2 : 1),
+    count: () => navEntries().length,
     group,
     order: () => 0,
-    activate: (i) => go(routes[i]),
-    start: () => (currentRoute().name === "search" && showsSearch() ? 1 : 0),
+    activate: (i) => {
+      const entry = navEntries()[i];
+      if (entry) go(entry.route);
+    },
+    start: () => Math.max(0, navEntries().findIndex((e) => isShown(e.route))),
   });
   return (
     <View
@@ -488,12 +508,11 @@ export function Sidebar(props: { compact?: boolean }) {
         <If when={!terminal}>
           <NavIndicator />
         </If>
-        <NavItem icon="home" label="Home" route={routes[0]} compact={compact()} keys={nav} index={0} />
         {/* The desktop searches from the header's top-right corner; the
             phone's drawer and the terminal keep Search here. */}
-        <If when={showsSearch()}>
-          <NavItem icon="search" label="Search" route={routes[1]} compact={compact()} keys={nav} index={1} />
-        </If>
+        <Each of={navEntries()} key={(e) => e.label}>
+          {(entry, i) => <NavItem icon={entry().icon} label={entry().label} route={entry().route} compact={compact()} keys={nav} index={i()} />}
+        </Each>
       </View>
       <LibraryPanel compact={compact()} group={group} />
       {/* The account: a panel of its own, its row like every other. */}

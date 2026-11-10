@@ -8,13 +8,23 @@
 import { batch, effect, signal, untracked } from "nsh";
 import { createNavStack } from "nsh/base";
 
-/** A page of the main content. */
-export type Route = { name: "home" } | { name: "search" } | { name: "collection"; uri: string };
+/** A page of the main content: the roots (Home, Explore, Search), a
+ * collection (playlist, album, artist, Liked Songs, History), or a browse
+ * page (a mood or genre, charts, new releases). */
+export type Route =
+  | { name: "home" }
+  | { name: "explore" }
+  | { name: "search" }
+  | { name: "collection"; uri: string }
+  | { name: "page"; uri: string };
 
 /** The root routes: the same objects every time, so a stack that keeps one
  * keeps its page. */
 export const HOME: Route = { name: "home" };
 export const SEARCH: Route = { name: "search" };
+export const EXPLORE: Route = { name: "explore" };
+/** What the account played. */
+export const HISTORY: Route = { name: "collection", uri: "ytm:history:all" };
 /** Liked Songs as a root: the phone's tab. */
 export const LIKED: Route = { name: "collection", uri: "ytm:collection:LM" };
 
@@ -96,7 +106,8 @@ effect(() => {
 
 function same(a: Route | undefined, b: Route): boolean {
   if (!a || a.name !== b.name) return false;
-  return a.name !== "collection" || (b.name === "collection" && a.uri === b.uri);
+  if (a.name === "collection" || a.name === "page") return "uri" in b && a.uri === b.uri;
+  return true;
 }
 
 /** The page on top (tracked where it is read). */
@@ -115,8 +126,8 @@ export function currentRoot(): Route {
  * stack is gone back to (Back's motion, its page as it was); the next one
  * ahead is gone forward to; any other is pushed (Forward's motion). */
 export function open(route: Route): void {
-  if (route.name === "home" || route.name === "search") {
-    openRoot(route.name === "home" ? HOME : SEARCH);
+  if (route.name === "home" || route.name === "search" || route.name === "explore") {
+    openRoot(route.name === "home" ? HOME : route.name === "search" ? SEARCH : EXPLORE);
     return;
   }
   if (same(currentRoute(), route)) return;
@@ -143,7 +154,7 @@ export function open(route: Route): void {
 const rootOpenCount = signal(0);
 export const rootOpens = () => rootOpenCount();
 
-/** Makes `root` (`HOME`, `SEARCH`, `LIKED`) the stack's root: back to it
+/** Makes `root` (`HOME`, `EXPLORE`, `SEARCH`, `LIKED`) the stack's root: back to it
  * when it is already, else the stack replaced; nothing ahead. */
 export function openRoot(root: Route): void {
   batch(() => {

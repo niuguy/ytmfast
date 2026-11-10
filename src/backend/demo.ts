@@ -256,7 +256,8 @@ export class DemoBackend implements Backend {
 
   async playContext(uri: string, trackUri: string | null): Promise<void> {
     this.#ready();
-    const found = fixtures.collection(uri);
+    // History is a list of plays, not a queue: its song plays on its own.
+    const found = uri.startsWith("ytm:history:") ? fixtures.history() : fixtures.collection(uri);
     if (!found || found.tracks.length === 0) throw backendError("E_NOT_FOUND", `no demo collection ${uri}`);
     this.#setQueue(found.tracks);
     const at = trackUri ? found.tracks.findIndex((t) => t.uri === trackUri) : -1;

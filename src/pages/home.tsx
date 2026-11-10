@@ -1,6 +1,7 @@
 // Home: the greeting, then the sections of the day.
 
-import { List, Text, untracked, View } from "nsh";
+import { List, signal, Text, untracked, View } from "nsh";
+import { FilterChips } from "../components/library/chips";
 import { pageEnd, playerOverlap } from "../components/layout";
 import { homeQuery } from "../data/queries";
 import { CardRow } from "../components/library/cards";
@@ -22,8 +23,11 @@ function Greeting(props: { text: string; entrance?: boolean }) {
   );
 }
 
+/** The chip Home is filtered by ("" for none); kept while the app runs. */
+const chip = signal("");
+
 export function HomePage() {
-  const home = homeQuery();
+  const home = homeQuery(chip);
   return (
     <AppPage title="Home" testID="page-home" shown={() => currentRoute().name === "home"}>
       {/* Virtualized both ways: the sections down the page are a list, and
@@ -66,7 +70,17 @@ export function HomePage() {
             estimatedItemSize={terminal ? 4 : 270}
             class="flex-1"
             contentClass={terminal ? "" : "px-3"}
-            header={() => <Greeting text={data().greeting || "Home"} entrance={instant} />}
+            header={() => (
+              <View class={terminal ? "gap-1" : "gap-4"}>
+                <Greeting text={data().greeting || "Home"} entrance={instant} />
+                {/* Home's filters ("Relax", "Workout"): one at a time. */}
+                <If when={(data().chips ?? []).length > 0 && !terminal}>
+                  <View class="px-3">
+                    <FilterChips chips={data().chips ?? []} selected={chip()} onSelect={(p) => chip.set(p)} />
+                  </View>
+                </If>
+              </View>
+            )}
             footer={() => <View class={pageEnd()} />}
           >
             {(section, i) => (

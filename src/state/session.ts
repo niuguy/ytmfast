@@ -86,6 +86,12 @@ export function cacheAccount(): string | null {
 /** Goes up when data may load anew (tracked). */
 export const dataEpoch = () => epoch();
 
+/** The account's data changed (a save, a subscription, a playlist edited):
+ * pages load again, showing what they had meanwhile. */
+export function refreshData(): void {
+  epoch.update((e) => e + 1);
+}
+
 /** Opens Google's sign-in. */
 export function signIn(): void {
   backend.signIn().catch((error) => report("signInFailed", error));

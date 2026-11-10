@@ -3,7 +3,7 @@
 
 import { type Accessor, resource, type Resource } from "nsh";
 import { type CachedQuery, cachedQuery } from "./cache";
-import { type Collection, type Home, kindOf, type Library, type Lyrics, type Me } from "../backend/types";
+import { type Collection, type Home, kindOf, type Library, type Lyrics, type Me, type Page } from "../backend/types";
 import { backend } from "../state/engine";
 import { cacheAccount, dataEpoch } from "../state/session";
 
@@ -16,9 +16,17 @@ function scoped(key: () => string | null) {
   };
 }
 
-/** The home page. */
-export function homeQuery(): CachedQuery<Home> {
-  return cachedQuery(scoped(() => "home"), () => backend.home());
+/** The home page, or Home filtered by one of its chips (`params`). */
+export function homeQuery(params: () => string = () => ""): CachedQuery<Home> {
+  return cachedQuery(
+    scoped(() => (params() ? `home:${params()}` : "home")),
+    (key) => (key === "home" ? backend.home() : backend.homeWith(key.slice("home:".length))),
+  );
+}
+
+/** A browse page (Explore, a mood or genre, charts, new releases) by URI. */
+export function pageQuery(uri: () => string): CachedQuery<Page> {
+  return cachedQuery(scoped(uri), (key) => backend.browse(key));
 }
 
 /** A playlist, album, artist or Liked Songs by URI. */
@@ -31,6 +39,8 @@ export function collectionQuery(uri: () => string): CachedQuery<Collection> {
         return backend.artist(key);
       case "collection":
         return backend.likedSongs();
+      case "history":
+        return backend.history();
       default:
         return backend.playlist(key);
     }
