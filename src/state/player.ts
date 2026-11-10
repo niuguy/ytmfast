@@ -10,7 +10,7 @@
 import { Animated, cleanup, type CompositeAnimation, computed, createAnimatedValue, Easing, effect, signal, untracked } from "nsh";
 import { EMPTY_PLAYER, type Item, type PlayerState, positionAt, type RepeatMode, type Track } from "../backend/types";
 import { backend } from "./engine";
-import { type MessageId, notify, report } from "./feedback";
+import { type MessageId, report } from "./feedback";
 import { askToSignIn, ready, signedIn } from "./session";
 
 /** A control's change on its way: shown until the backend agrees, or a

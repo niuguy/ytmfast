@@ -1,8 +1,8 @@
 // `EngineBackend`: the `Backend` over the native engine (`ytmfast/native`'s
-// `Spotify` class). This is the only file that calls the engine, so a change
+// `YTMusic` class). This is the only file that calls the engine, so a change
 // to the engine's API changes only this file.
 //
-// `new Spotify()` is a cheap handle onto the one engine of the process (Rust
+// `new YTMusic()` is a cheap handle onto the one engine of the process (Rust
 // starts it the first time), so a hot update of the TSX never starts a
 // second Chromium. Each `EngineBackend` owns one handle; the previous one is
 // disposed when a hot update makes a new one.
