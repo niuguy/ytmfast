@@ -5,6 +5,8 @@
 **An unofficial, native client for YouTube Music, built with [NSH](https://nsh.dev), forked from
 [Spotish](https://github.com/huacnlee/spotish).**
 
+![YTMFast's Home: the sidebar with Home, Explore, History and the library, the day's rows of covers under Home's filter chips, and the player bar along the bottom.](docs/screenshots/home.png)
+
 YTMFast is a lightweight, native desktop app that works with your Google account. Instead of running YouTube
 Music's web app in a full browser window, it runs YouTube Music's own web player out of sight in a browser you
 already have installed, and drives it from a fast, native interface drawn by NSH. Your account, free or Premium,
@@ -62,6 +64,12 @@ Rust engine and one TSX interface, drawn natively, not in a web page.
 - **Now Playing** with lyrics, the system's media keys, and the music light.
 
 Every song has a menu (its "…" button, or a right click) and so does every album, playlist and artist.
+
+| Explore | The queue |
+| --- | --- |
+| ![Explore: new releases, charts, and moods and genres as coloured chips.](docs/screenshots/explore.png) | ![The queue panel: the song playing, then what plays next.](docs/screenshots/queue.png) |
+
+The screenshots show the app's demo data (`YTMFAST_DEMO=1`): made-up music, not YouTube Music's.
 
 ## How it works
 
