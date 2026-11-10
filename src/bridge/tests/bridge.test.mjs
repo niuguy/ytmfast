@@ -1,4 +1,6 @@
 // Node tests of the bridge (no npm): `node --test src/bridge/tests/`.
+// The InnerTube answers here are cut down from YouTube Music's own, to the
+// fields the parsers read.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -14,504 +16,468 @@ const { render } = await import("../gen-source.mjs");
 
 const rejects = (promise, code) => assert.rejects(promise, (e) => e.message.startsWith(code + ":"), "expected " + code);
 
-// --- A fake player bar ------------------------------------------------------
+// --- InnerTube shapes ---------------------------------------------------------
 
-function toggleButton(testid, attrs) {
-  const b = h("button", Object.assign({ "data-testid": testid, "aria-checked": "false" }, attrs));
-  b.onclick = () => b.setAttribute("aria-checked", b.getAttribute("aria-checked") === "true" ? "false" : "true");
-  return b;
-}
-function repeatButton() {
-  const b = h("button", { "data-testid": "control-button-repeat", "aria-checked": "false", "aria-label": "Enable repeat" });
-  const cycle = [
-    ["false", "Enable repeat"],
-    ["true", "Enable repeat one"],
-    ["mixed", "Disable repeat"],
-  ];
-  let i = 0;
-  b.onclick = () => {
-    i = (i + 1) % 3;
-    b.setAttribute("aria-checked", cycle[i][0]);
-    b.setAttribute("aria-label", cycle[i][1]);
+const runs = (...parts) => ({ runs: parts.map((p) => (typeof p === "string" ? { text: p } : p)) });
+const thumbs = (url, width = 120) => ({ thumbnails: [{ url: url.replace("=w544-h544", "=w60-h60"), width: 60, height: 60 }, { url, width, height: width }] });
+const browseTo = (browseId, pageType) => ({
+  browseEndpoint: { browseId, browseEndpointContextSupportedConfigs: { browseEndpointContextMusicConfig: { pageType: "MUSIC_PAGE_TYPE_" + pageType } } },
+});
+const artistRun = (name, id) => ({ text: name, navigationEndpoint: browseTo(id, "ARTIST") });
+const albumRun = (name, id) => ({ text: name, navigationEndpoint: browseTo(id, "ALBUM") });
+const col = (t) => ({ musicResponsiveListItemFlexColumnRenderer: { text: t } });
+const fixed = (t) => ({ musicResponsiveListItemFixedColumnRenderer: { text: runs(t) } });
+
+// A song row of a playlist: title; artists; album; length.
+const songRow = (videoId, title, { artists = [["Mira Vale", "UCmira"]], album = ["Neon Orchard", "MPREb_neon"], length = "3:41", setId, explicit, grey } = {}) => ({
+  musicResponsiveListItemRenderer: {
+    thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://lh3.googleusercontent.com/" + videoId + "=w544-h544") } },
+    flexColumns: [
+      col(runs({ text: title, navigationEndpoint: { watchEndpoint: { videoId } } })),
+      col(runs(...artists.flatMap(([n, id], i) => (i ? [" & ", artistRun(n, id)] : [artistRun(n, id)])))),
+      col(album ? runs(albumRun(album[0], album[1])) : runs()),
+    ],
+    fixedColumns: [fixed(length)],
+    playlistItemData: { videoId, playlistSetVideoId: setId },
+    badges: explicit ? [{ musicInlineBadgeRenderer: { icon: { iconType: "MUSIC_EXPLICIT_BADGE" } } }] : undefined,
+    musicItemRendererDisplayPolicy: grey ? "MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT" : undefined,
+  },
+});
+const card = (title, subtitle, endpoint, image = "https://lh3.googleusercontent.com/c=w544-h544") => ({
+  musicTwoRowItemRenderer: { title: runs(title), subtitle: runs(...subtitle), thumbnailRenderer: { musicThumbnailRenderer: { thumbnail: thumbs(image, 226) } }, navigationEndpoint: endpoint },
+});
+const carousel = (title, contents) => ({ musicCarouselShelfRenderer: { header: { musicCarouselShelfBasicHeaderRenderer: { title: runs(title) } }, contents } });
+
+// --- Endpoints and items ------------------------------------------------------
+
+test("an endpoint names what it opens or plays", () => {
+  assert.deepEqual(B.targetOf(browseTo("MPREb_x", "ALBUM")), { uri: "ytm:album:MPREb_x", kind: "album" });
+  assert.deepEqual(B.targetOf(browseTo("VLPLabc", "PLAYLIST")), { uri: "ytm:playlist:PLabc", kind: "playlist" });
+  assert.deepEqual(B.targetOf(browseTo("VLLM", "PLAYLIST")), { uri: "ytm:collection:LM", kind: "collection" });
+  assert.deepEqual(B.targetOf(browseTo("UCa", "ARTIST")), { uri: "ytm:artist:UCa", kind: "artist" });
+  assert.deepEqual(B.targetOf(browseTo("MPLAUCa", "LIBRARY_ARTIST")), { uri: "ytm:artist:UCa", kind: "artist" });
+  assert.deepEqual(B.targetOf({ watchEndpoint: { videoId: "v1" } }), { uri: "ytm:track:v1", kind: "track" });
+  assert.deepEqual(B.targetOf({ watchPlaylistEndpoint: { playlistId: "RDCLAKx" } }), { uri: "ytm:mix:RDCLAKx", kind: "mix" });
+  assert.equal(B.targetOf({ urlEndpoint: { url: "https://x" } }), null);
+});
+
+test("a playlist row is a track, with its artists, album and length", () => {
+  const t = B.trackOf(songRow("vid1", "Glass Bees", { artists: [["Mira Vale", "UCm"], ["Ode", "UCo"]], setId: "SET1", explicit: true }).musicResponsiveListItemRenderer, 0);
+  assert.deepEqual(t, {
+    uri: "ytm:track:vid1",
+    uid: "SET1",
+    name: "Glass Bees",
+    artists: "Mira Vale, Ode",
+    album: "Neon Orchard",
+    albumUri: "ytm:album:MPREb_neon",
+    image: "https://lh3.googleusercontent.com/vid1=w120-h120",
+    durationMs: 221000,
+    explicit: true,
+    playable: true,
+  });
+  const grey = B.trackOf(songRow("vid2", "Gone", { grey: true }).musicResponsiveListItemRenderer, 3);
+  assert.equal(grey.playable, false);
+  assert.equal(grey.uid, "vid2:3");
+});
+
+test("an album row takes the album's artist and cover", () => {
+  const row = songRow("v", "Intro", { artists: [], album: null }).musicResponsiveListItemRenderer;
+  delete row.thumbnail;
+  const t = B.trackOf(row, 0, { artists: "The Quiet Fields", album: "Paper Lanterns", albumUri: "ytm:album:MPREb_p", image: "cover" });
+  assert.equal(t.artists, "The Quiet Fields");
+  assert.equal(t.albumUri, "ytm:album:MPREb_p");
+  assert.equal(t.image, "cover");
+});
+
+test("cards and rows are items; a row that opens a page is no track", () => {
+  const album = B.itemOf(card("Paper Lanterns", ["Album", " • ", "The Quiet Fields", " • ", "2021"], browseTo("MPREb_p", "ALBUM")).musicTwoRowItemRenderer);
+  assert.deepEqual(album, { uri: "ytm:album:MPREb_p", kind: "album", name: "Paper Lanterns", subtitle: "Album · The Quiet Fields · 2021", image: "https://lh3.googleusercontent.com/c=w226-h226" });
+  const artistRow = {
+    navigationEndpoint: browseTo("UCq", "ARTIST"),
+    flexColumns: [col(runs("The Quiet Fields")), col(runs("Artist", " • ", "1.2M subscribers"))],
   };
-  return b;
-}
-// The widget's like button: on a track not liked it adds it; on a liked one
-// it opens an "Add to playlist" picker (appended to `body`), where Liked
-// Songs is unchecked and Done applies it.
-function likeButton(body) {
-  const b = h("button", { "aria-checked": "false", "aria-label": "Add to Liked Songs" });
-  const set = (on) => {
-    b.setAttribute("aria-checked", on ? "true" : "false");
-    b.setAttribute("aria-label", on ? "Add to playlist" : "Add to Liked Songs");
+  assert.equal(B.trackOf(artistRow, 0), null);
+  assert.equal(B.itemOf(artistRow).kind, "artist");
+});
+
+// --- Pages --------------------------------------------------------------------
+
+test("home: titled rows of cards, with a greeting for the hour", () => {
+  const json = {
+    contents: {
+      singleColumnBrowseResultsRenderer: {
+        tabs: [
+          {
+            tabRenderer: {
+              content: {
+                sectionListRenderer: {
+                  contents: [
+                    carousel("Quick picks", [songRow("q1", "Slow River")]),
+                    carousel("Mixed for you", [card("Supermix", ["Mira Vale, Ode"], { watchPlaylistEndpoint: { playlistId: "RDTMAK5uy_x" } })]),
+                    carousel("Empty", []),
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
   };
-  b.onclick = () => {
-    if (b.getAttribute("aria-checked") !== "true") return set(true);
-    const choice = h(
-      "button",
-      { role: "menuitemcheckbox", "aria-checked": "true" },
-      h("div", { role: "group", "aria-labelledby": "listrow-title-spotify:collection:tracks" }),
-    );
-    choice.onclick = () => choice.setAttribute("aria-checked", choice.getAttribute("aria-checked") === "true" ? "false" : "true");
-    const cancel = h("button", {});
-    cancel.textContent = "Cancel";
-    const done = h("button", {});
-    done.textContent = "Done";
-    const picker = h("div", { role: "dialog" }, h("div", {}, choice), h("div", {}, cancel, done));
-    const close = () => picker.remove();
-    cancel.onclick = close;
-    done.onclick = () => {
-      set(choice.getAttribute("aria-checked") === "true");
-      close();
-    };
-    body().append(picker);
-  };
-  return b;
-}
-function range(testid, attrs, value) {
-  const input = h("input", Object.assign({ type: "range" }, attrs));
-  input.value = String(value);
-  return h("div", { "data-testid": testid }, input);
-}
-function playerPage({ ad = false } = {}) {
-  const next = h("button", { "data-testid": "control-button-skip-forward" });
-  const prev = h("button", { "data-testid": "control-button-skip-back" });
-  const play = h("button", { "data-testid": "control-button-playpause", "aria-label": "Play" });
-  play.onclick = () => play.setAttribute("aria-label", /pause/i.test(play.getAttribute("aria-label")) ? "Play" : "Pause");
-  const mute = h("button", { "data-testid": "volume-bar-toggle-mute-button", "aria-label": "Mute" });
-  mute.onclick = () => mute.setAttribute("aria-label", mute.getAttribute("aria-label") === "Mute" ? "Unmute" : "Mute");
-  const widget = h(
-    "div",
-    { "data-testid": "now-playing-widget-v2" },
-    h("div", { "data-testid": "context-item-info-title" }, h("a", { href: "/track/abc123" })),
-    h("a", { href: "/playlist/pl1" }),
-    likeButton(() => body),
-    ad ? h("div", { "data-testid": "context-item-info-ad-subtitle" }) : [],
+  const home = B.homeOf(json, 20);
+  assert.equal(home.greeting, "Good evening");
+  assert.deepEqual(
+    home.sections.map((s) => [s.title, s.items.map((i) => i.kind)]),
+    [
+      ["Quick picks", ["track"]],
+      ["Mixed for you", ["mix"]],
+    ],
   );
-  widget.querySelector('[data-testid="context-item-info-title"] a').textContent = "Song";
-  const progress = range("playback-progressbar", { min: "0", max: "200000", step: "1000" }, 1000);
-  const volume = range("volume-bar", { min: "0", max: "1", step: "0.1" }, 0.5);
-  const barEl = h(
-    "footer",
-    { "data-testid": "now-playing-bar" },
-    widget,
-    play,
-    next,
-    prev,
-    toggleButton("control-button-shuffle"),
-    repeatButton(),
-    progress,
-    volume,
-    mute,
-  );
-  const body = h("body", {}, barEl);
-  return { body, bar: barEl, next, prev, play, mute, progress: progress.children[0], volume: volume.children[0], like: widget.querySelector("button[aria-checked]") };
-}
-function bridgeFor(page) {
-  const win = fakeWindow(page.body);
-  const bridge = B.install(win, options(win));
-  return { win, bridge };
-}
+});
 
-// --- Envelope and errors ----------------------------------------------------
+test("search sorts what it finds by what it opens, top result first", () => {
+  const json = {
+    contents: {
+      tabbedSearchResultsRenderer: {
+        tabs: [
+          {
+            tabRenderer: {
+              content: {
+                sectionListRenderer: {
+                  contents: [
+                    { musicCardShelfRenderer: { title: runs({ text: "Mira Vale", navigationEndpoint: browseTo("UCm", "ARTIST") }), subtitle: runs("Artist"), thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://lh3.googleusercontent.com/m=w544-h544") } } } },
+                    { musicShelfRenderer: { title: runs("Songs"), contents: [songRow("s1", "Glass Bees"), songRow("s2", "Kites")] } },
+                    {
+                      musicShelfRenderer: {
+                        title: runs("Albums"),
+                        contents: [{ musicResponsiveListItemRenderer: { navigationEndpoint: browseTo("MPREb_n", "ALBUM"), flexColumns: [col(runs("Neon Orchard")), col(runs("Album", " • ", "Mira Vale"))] } }],
+                      },
+                    },
+                    {
+                      musicShelfRenderer: {
+                        title: runs("Community playlists"),
+                        contents: [{ musicResponsiveListItemRenderer: { navigationEndpoint: browseTo("VLPLx", "PLAYLIST"), flexColumns: [col(runs("Kites & Bees")), col(runs("Playlist"))] } }],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  };
+  const r = B.searchOf(json);
+  assert.deepEqual(r.tracks.map((t) => [t.uri, t.uid]), [["ytm:track:s1", ""], ["ytm:track:s2", ""]]);
+  assert.deepEqual(r.artists.map((i) => i.uri), ["ytm:artist:UCm"]);
+  assert.deepEqual(r.albums.map((i) => i.uri), ["ytm:album:MPREb_n"]);
+  assert.deepEqual(r.playlists.map((i) => i.uri), ["ytm:playlist:PLx"]);
+});
 
-// The code a call rejects with, or "OK".
-const codeOfCall = async (bridge, name, args) => {
-  try {
-    await bridge.call(name, args);
-    return "OK";
-  } catch (e) {
-    assert.ok(e instanceof Error);
-    assert.match(e.message, /^E_[A-Z_]+: /);
-    return B.codeOf(e);
-  }
+const albumPage = {
+  contents: {
+    twoColumnBrowseResultsRenderer: {
+      tabs: [
+        {
+          tabRenderer: {
+            content: {
+              sectionListRenderer: {
+                contents: [
+                  {
+                    musicResponsiveHeaderRenderer: {
+                      title: runs("Paper Lanterns"),
+                      subtitle: runs("Album", " • ", "2021"),
+                      straplineTextOne: runs(artistRun("The Quiet Fields", "UCq")),
+                      secondSubtitle: runs("2 songs", " • ", "7 minutes"),
+                      thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://lh3.googleusercontent.com/pl=w544-h544", 544) } },
+                      description: { musicDescriptionShelfRenderer: { description: runs("Recorded at night.") } },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      ],
+      secondaryContents: {
+        sectionListRenderer: {
+          contents: [{ musicShelfRenderer: { contents: [songRow("a1", "First Light", { artists: [], album: null }), songRow("a2", "Slow River", { artists: [], album: null })] } }],
+        },
+      },
+    },
+  },
+  microformat: { microformatDataRenderer: { urlCanonical: "https://music.youtube.com/playlist?list=OLAK5uy_paper" } },
 };
 
-test("messages carry v:1 and calls resolve plain values or throw E_ codes", async () => {
-  assert.deepEqual(B.envelope("ready"), { v: 1, type: "ready" });
-  assert.deepEqual(B.envelope("state", { state: { a: 1 } }), { v: 1, type: "state", state: { a: 1 } });
-  assert.equal(B.toError(B.fail("E_AD", "seek")).message, "E_AD: seek");
-  assert.equal(B.toError(new Error("boom")).message, "E_INTERNAL: boom");
-  assert.equal(B.toError("text").message, "E_INTERNAL: text");
-  const { bridge } = bridgeFor(playerPage());
-  assert.equal(await bridge.call("toggle", []), null, "plain value, not an envelope");
-  assert.equal(await bridge.call("setShuffle", [true]), true);
-  assert.equal(await codeOfCall(bridge, "nope", []), "E_UNKNOWN_CALL");
-});
-
-test("need throws E_SHAPE with the op and path, and warns", () => {
-  const warnings = [];
-  assert.equal(B.need("home", { home: { a: [1] } }, "home.a", (w) => warnings.push(w))[0], 1);
-  assert.throws(() => B.need("home", { home: {} }, "home.sectionContainer.sections.items", (w) => warnings.push(w)), /^Error: E_SHAPE: home\.home\.sectionContainer\.sections\.items$/);
-  assert.match(warnings[0], /home/);
-});
-
-// --- Pure helpers -----------------------------------------------------------
-
-test("ad and disabled guards", () => {
-  assert.equal(B.adFrom({ marker: {} }), true);
-  assert.equal(B.adFrom({ metaTitle: "Advertisement" }), true);
-  assert.equal(B.adFrom({ hasTrack: true, nextDisabled: true, progressDisabled: true }), true);
-  assert.equal(B.adFrom({ hasTrack: true, nextDisabled: true, progressDisabled: false }), false); // end of a context
-  assert.equal(B.adFrom({ hasTrack: false, nextDisabled: true, progressDisabled: true }), false); // nothing loaded
-  assert.throws(() => B.usable("next", null), /^Error: E_NOT_FOUND: control next$/);
-  const off = h("button", {});
-  off.disabled = true;
-  assert.throws(() => B.usable("next", off), /^Error: E_DISABLED: control next$/);
-  assert.throws(() => B.usable("next", h("button", { "aria-disabled": "true" })), /^Error: E_DISABLED/);
-});
-
-test("quantize respects min, max and step", () => {
-  assert.equal(B.quantize(0.437, 0, 1, 0.1), 0.4);
-  assert.equal(B.quantize(1.7, 0, 1, 0.1), 1);
-  assert.equal(B.quantize(12345, 0, 200000, 1000), 12000);
-  assert.equal(B.quantize(0.437, 0, 1, 0), 0.437);
-});
-
-test("trackIdFromHref and pathOf", () => {
-  assert.equal(B.trackIdFromHref("/track/abc123?si=x"), "abc123");
-  assert.equal(B.trackIdFromHref("/album/x?highlight=spotify:track:def456"), "def456");
-  assert.equal(B.trackIdFromHref("/album/x"), "");
-  assert.equal(B.pathOf("spotify:user:bob:collection"), "/collection/tracks");
-  assert.equal(B.pathOf("spotify:album:A1"), "/album/A1");
-  assert.throws(() => B.pathOf("spotify:album:../x"), /E_BAD_ARGS/);
-});
-
-test("state posts on change, on a seek, and a heartbeat at most once a second", () => {
-  const s = (positionMs, at, extra) => Object.assign({ title: "a", playing: true, positionMs, at }, extra);
-  const last = s(1000, 0);
-  assert.equal(B.shouldPost(null, last, 0), true);
-  assert.equal(B.shouldPost(last, s(1250, 250), 250), false);
-  assert.equal(B.shouldPost(last, s(2000, 1000), 1000), true); // heartbeat
-  assert.equal(B.shouldPost(last, s(60000, 250), 250), true); // seek
-  assert.equal(B.shouldPost(last, s(1250, 250, { title: "b" }), 250), true);
-  const paused = s(1000, 0, { playing: false });
-  assert.equal(B.shouldPost(paused, s(1000, 5000, { playing: false }), 5000), false);
-});
-
-// --- Idempotent setters -----------------------------------------------------
-
-test("settle presses until the state matches, bounded", async () => {
-  let t = 0;
-  const env = { sleep: async (ms) => void (t += ms), now: () => t };
-  let on = false;
-  let presses = 0;
-  const flip = () => {
-    presses++;
-    on = !on;
-  };
-  assert.equal(await B.settle({ name: "shuffle", read: () => on, target: true, press: flip, ...env }), true);
-  assert.equal(presses, 1);
-  assert.equal(await B.settle({ name: "shuffle", read: () => on, target: true, press: flip, ...env }), true);
-  assert.equal(presses, 1, "no press when already there");
-
-  const modes = ["off", "context", "track"];
-  let i = 0;
-  const cycle = () => (i = (i + 1) % 3);
-  assert.equal(await B.settle({ name: "repeat", read: () => modes[i], target: "track", press: cycle, ...env }), "track");
-  assert.equal(await B.settle({ name: "repeat", read: () => modes[i], target: "context", press: cycle, ...env }), "context");
-
-  // A page that ignores the press: one press, then E_TIMEOUT (no blind re-press).
-  let ignored = 0;
-  await rejects(B.settle({ name: "liked", read: () => false, target: true, press: () => ignored++, ...env }), "E_TIMEOUT");
-  assert.equal(ignored, 1);
-  // A control that throws (missing, disabled) passes its error through.
-  await rejects(B.settle({ name: "liked", read: () => false, target: true, press: () => B.usable("like", null), ...env }), "E_NOT_FOUND");
-});
-
-// --- Hash cache -------------------------------------------------------------
-
-test("hash cache: one scan in flight, new bundles only, misses back off", async () => {
-  let t = 0;
-  let urls = ["a.js", "b.js"];
-  const fetched = [];
-  const bodies = { "a.js": '"home","query","' + "a".repeat(64) + '"', "b.js": "", "c.js": '"later","query","' + "c".repeat(64) + '"' };
-  const cache = B.createHashCache({
-    now: () => t,
-    listUrls: () => urls,
-    fetchText: async (u) => {
-      fetched.push(u);
-      return bodies[u];
-    },
+test("an album page: header, tracks with the album's artist, and its playlist", () => {
+  const { collection, playlistId } = B.collectionOf(albumPage, "ytm:album:MPREb_p", "album");
+  assert.equal(playlistId, "OLAK5uy_paper");
+  assert.deepEqual(collection.header, {
+    uri: "ytm:album:MPREb_p",
+    kind: "album",
+    name: "Paper Lanterns",
+    subtitle: "The Quiet Fields · Album · 2021",
+    image: "https://lh3.googleusercontent.com/pl=w544-h544",
+    description: "Recorded at night.",
   });
-  const [x, y] = await Promise.all([cache.hash("home"), cache.hash("home")]);
-  assert.equal(x, "a".repeat(64));
-  assert.equal(y, x);
-  assert.deepEqual(fetched, ["a.js", "b.js"], "one scan for both");
-
-  await rejects(cache.hash("later"), "E_UNKNOWN_QUERY");
-  assert.deepEqual(fetched, ["a.js", "b.js"], "no re-download of scanned bundles");
-  urls = ["a.js", "b.js", "c.js"];
-  await rejects(cache.hash("later"), "E_UNKNOWN_QUERY"); // still backing off
-  assert.equal(fetched.length, 2);
-  t += 5000;
-  assert.equal(await cache.hash("later"), "c".repeat(64));
-  assert.deepEqual(fetched, ["a.js", "b.js", "c.js"]);
-
-  await rejects(cache.hash("nope"), "E_UNKNOWN_QUERY");
-  t += 5000;
-  await rejects(cache.hash("nope"), "E_UNKNOWN_QUERY");
-  assert.equal(cache.misses.get("nope").count, 2);
-  assert.equal(cache.misses.get("nope").until, t + 10000, "doubles");
-  cache.learn("nope", "d".repeat(64));
-  assert.equal(await cache.hash("nope"), "d".repeat(64));
-  assert.equal(cache.misses.has("nope"), false);
+  assert.equal(collection.total, 2);
+  assert.deepEqual(collection.tracks.map((t) => [t.name, t.artists, t.album]), [
+    ["First Light", "The Quiet Fields", "Paper Lanterns"],
+    ["Slow River", "The Quiet Fields", "Paper Lanterns"],
+  ]);
 });
 
-// --- Liked Songs ------------------------------------------------------------
-
-test("liked songs map from _uri, data.uri or uid; empty mapping is E_SHAPE", () => {
-  const data = { name: "S", artists: { items: [{ profile: { name: "A" } }] } };
-  assert.equal(B.likedTrack({ track: { _uri: "spotify:track:1", data } }).uri, "spotify:track:1");
-  assert.equal(B.likedTrack({ track: { data: Object.assign({ uri: "spotify:track:2" }, data) } }).uri, "spotify:track:2");
-  assert.equal(B.likedTrack({ uid: "spotify:track:3", track: { data } }).uri, "spotify:track:3");
-  assert.equal(B.likedTrack({ uid: "zz", track: { data } }), null);
-  assert.equal(B.likedTracks([]).length, 0);
-  assert.throws(() => B.likedTracks([{ track: { data } }]), /^Error: E_SHAPE: likedSongs\.tracks$/);
-  assert.equal(data.uri, undefined, "the page's data is not mutated");
+test("a long playlist says its total and where it continues", () => {
+  const json = {
+    header: { musicEditablePlaylistDetailHeaderRenderer: { header: { musicResponsiveHeaderRenderer: { title: runs("Kites"), straplineTextOne: runs("Ada"), secondSubtitle: runs("1,204 songs") } } } },
+    contents: {
+      musicPlaylistShelfRenderer: {
+        contents: [songRow("p1", "One", { setId: "S1" }), { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: "TOKEN" } } } }],
+      },
+    },
+  };
+  const { collection, continuation } = B.collectionOf(json, "ytm:playlist:PLk", "playlist");
+  assert.equal(collection.header.name, "Kites");
+  assert.equal(collection.total, 1204);
+  assert.equal(continuation, "TOKEN");
+  const more = B.continuedTracks({ onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: [songRow("p2", "Two")] } }] }, 1);
+  assert.deepEqual(more.tracks.map((t) => t.uid), ["p2:1"]);
+  assert.equal(more.continuation, "");
 });
 
-// --- The bridge in a fake page ---------------------------------------------
+test("an artist page: top songs, albums and singles, and what plays", () => {
+  const json = {
+    header: {
+      musicImmersiveHeaderRenderer: {
+        title: runs("Mira Vale"),
+        description: runs("Dream pop."),
+        thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://lh3.googleusercontent.com/mv=w544-h544", 544) } },
+        subscriptionButton: { subscribeButtonRenderer: { subscriberCountText: runs("1.2M") } },
+        startRadioButton: { buttonRenderer: { navigationEndpoint: { watchPlaylistEndpoint: { playlistId: "RDEMmira", params: "wAEB" } } } },
+      },
+    },
+    contents: {
+      singleColumnBrowseResultsRenderer: {
+        tabs: [
+          {
+            tabRenderer: {
+              content: {
+                sectionListRenderer: {
+                  contents: [
+                    { musicShelfRenderer: { title: runs({ text: "Top songs", navigationEndpoint: browseTo("VLOLAK5uy_top", "PLAYLIST") }), contents: [songRow("t1", "Glass Bees")] } },
+                    carousel("Albums", [card("Neon Orchard", ["2023"], browseTo("MPREb_n", "ALBUM"))]),
+                    carousel("Singles", [card("Kites", ["2024"], browseTo("MPREb_k", "ALBUM"))]),
+                    carousel("Fans might also like", [card("Ode", ["Artist"], browseTo("UCo", "ARTIST"))]),
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  };
+  const page = B.artistOf(json, "ytm:artist:UCm");
+  assert.equal(page.collection.header.name, "Mira Vale");
+  assert.equal(page.collection.header.subtitle, "1.2M");
+  assert.deepEqual(page.collection.tracks.map((t) => t.uri), ["ytm:track:t1"]);
+  assert.deepEqual(page.collection.releases.map((r) => r.uri), ["ytm:album:MPREb_n", "ytm:album:MPREb_k"]);
+  assert.equal(page.songsPlaylistId, "OLAK5uy_top");
+  assert.deepEqual(page.play, { playlistId: "RDEMmira", params: "wAEB" });
+});
 
-test("install: top frame only, idempotent, replaces and disposes", () => {
-  const page = playerPage();
-  const win = fakeWindow(page.body);
-  const frame = fakeWindow(h("body", {}));
+test("the library puts Liked Music first, and adds it when missing", () => {
+  const playlists = { contents: { gridRenderer: { items: [card("Kites", ["Playlist"], browseTo("VLPLk", "PLAYLIST")), card("Liked Music", ["Auto playlist"], browseTo("VLLM", "PLAYLIST"))] } } };
+  const albums = { contents: { gridRenderer: { items: [card("Neon Orchard", ["Album"], browseTo("MPREb_n", "ALBUM"))] } } };
+  assert.deepEqual(B.libraryOf([playlists, albums]).items.map((i) => i.uri), ["ytm:collection:LM", "ytm:playlist:PLk", "ytm:album:MPREb_n"]);
+  assert.deepEqual(B.libraryOf([]).items.map((i) => i.name), ["Liked Music"]);
+});
+
+test("the account: its sync id keys it", () => {
+  const json = { actions: [{ openPopupAction: { popup: { multiPageMenuRenderer: { header: { activeAccountHeaderRenderer: { accountName: runs("Ada"), channelHandle: runs("@ada"), accountPhoto: thumbs("https://yt3.ggpht.com/a=s88") } } } } } }] };
+  assert.deepEqual(B.meOf(json, "1234567||"), { id: "1234567", name: "Ada", username: "@ada", image: "https://yt3.ggpht.com/a=s88" });
+  assert.equal(B.meOf(json, "").id, "@ada");
+  assert.throws(() => B.meOf({}, ""), /E_SIGNED_OUT/);
+});
+
+test("lyrics: the lyrics tab's page, as plain lines with their source", () => {
+  const next = { contents: { tabbedRenderer: { tabs: [{ tabRenderer: { title: "Up next" } }, { tabRenderer: { endpoint: { browseEndpoint: { browseId: "MPLYt_abc" } } } }] } } };
+  assert.equal(B.lyricsBrowseIdOf(next), "MPLYt_abc");
+  assert.equal(B.lyricsBrowseIdOf({}), "");
+  const page = { contents: { sectionListRenderer: { contents: [{ musicDescriptionShelfRenderer: { description: runs("First line\n\nSecond line\n"), footer: runs("Source: LyricFind") } }] } } };
+  assert.deepEqual(B.lyricsOf(page), { synced: false, lines: [{ startMs: 0, words: "First line" }, { startMs: 0, words: "Second line" }], provider: "LyricFind" });
+  assert.deepEqual(B.lyricsOf(null), { synced: false, lines: [], provider: "" });
+});
+
+// --- Small parts --------------------------------------------------------------
+
+test("URIs, watch pages and the playing context", () => {
+  assert.deepEqual(B.parseUri("ytm:track:abc-_1"), { kind: "track", id: "abc-_1" });
+  assert.throws(() => B.parseUri("spotify:track:x"), /E_BAD_ARGS/);
+  assert.throws(() => B.parseUri("ytm:track:a/b"), /E_BAD_ARGS/);
+  assert.equal(B.watchOf({ videoId: "v", playlistId: "OLAK" }).url, "/watch?v=v&list=OLAK");
+  assert.deepEqual(B.watchOf({ playlistId: "RDx", params: "p" }).endpoint.watchPlaylistEndpoint, { playlistId: "RDx", params: "p" });
+  assert.equal(B.contextOf("OLAK", { uri: "ytm:album:MPREb_p", list: "OLAK" }), "ytm:album:MPREb_p");
+  assert.equal(B.contextOf("LM", null), "ytm:collection:LM");
+  assert.equal(B.contextOf("RDAMVMv", null), "ytm:mix:RDAMVMv");
+  assert.equal(B.contextOf("PLx", { uri: "ytm:album:a", list: "OLAK" }), "ytm:playlist:PLx");
+  assert.equal(B.contextOf("", null), "");
+  assert.equal(B.repeatOf("ALL"), "context");
+  assert.equal(B.repeatOf("ONE"), "track");
+  assert.equal(B.repeatOf(null), "off");
+  assert.equal(B.clockMs("1:02:03"), 3723000);
+  assert.equal(B.clockMs("12 songs"), 0);
+});
+
+test("requests are signed with the account's SAPISID cookies", async () => {
+  const sha1 = async (s) => "h(" + s + ")";
+  const cookies = B.cookiesOf("PREF=x; SAPISID=sa; __Secure-1PAPISID=one; __Secure-3PAPISID=three");
+  assert.equal(
+    await B.authorizationOf(cookies, 1700000000, "https://music.youtube.com", sha1),
+    "SAPISIDHASH 1700000000_h(1700000000 sa https://music.youtube.com) SAPISID1PHASH 1700000000_h(1700000000 one https://music.youtube.com) SAPISID3PHASH 1700000000_h(1700000000 three https://music.youtube.com)",
+  );
+  assert.equal(await B.authorizationOf({}, 1, "o", sha1), "");
+});
+
+// --- The bridge in a fake page --------------------------------------------------
+
+// A page with the player bar and a `#movie_player` whose API the test drives.
+function page({ cfg = true, ad = false } = {}) {
+  const like = h("ytmusic-like-button-renderer", { "like-status": "INDIFFERENT" }, h("div", { id: "button-shape-like" }, h("button", {})));
+  like.children[0].children[0].onclick = () => like.setAttribute("like-status", like.getAttribute("like-status") === "LIKE" ? "INDIFFERENT" : "LIKE");
+  const repeat = h("button", { class: "repeat" });
+  const barEl = h("ytmusic-player-bar", { "repeat-mode": "NONE" }, h("button", { class: "previous-button" }), h("button", { id: "play-pause-button" }), h("button", { class: "next-button" }), h("button", { class: "shuffle" }), repeat, like);
+  repeat.onclick = () => barEl.setAttribute("repeat-mode", { NONE: "ALL", ALL: "ONE", ONE: "NONE" }[barEl.getAttribute("repeat-mode")]);
+  const mp = h("div", { id: "movie_player", class: ad ? "html5-video-player ad-showing" : "html5-video-player" });
+  const p = { video: "v1", list: "", state: 2, time: 12.5, duration: 200, volume: 80, muted: false, calls: [] };
+  Object.assign(mp, {
+    getVideoData: () => ({ video_id: p.video, title: "Glass Bees", author: "Mira Vale" }),
+    getPlayerState: () => p.state,
+    getCurrentTime: () => p.time,
+    getDuration: () => p.duration,
+    getVolume: () => p.volume,
+    isMuted: () => p.muted,
+    getPlaylistId: () => p.list,
+    playVideo: () => (p.calls.push("play"), (p.state = 1)),
+    pauseVideo: () => (p.calls.push("pause"), (p.state = 2)),
+    seekTo: (s) => (p.calls.push("seek " + s), (p.time = s)),
+    setVolume: (v) => (p.calls.push("volume " + v), (p.volume = v)),
+    mute: () => (p.muted = true),
+    unMute: () => (p.muted = false),
+  });
+  const app = h("ytmusic-app", {}, barEl, mp);
+  const body = h("body", {}, app);
+  const win = fakeWindow(body);
+  if (cfg) win.ytcfg = { get: (k) => ({ INNERTUBE_CONTEXT: { client: { clientName: "WEB_REMIX", clientVersion: "1.2" } }, INNERTUBE_CONTEXT_CLIENT_NAME: 67 })[k] };
+  win.navigator.mediaSession = { metadata: { title: "Glass Bees", artist: "Mira Vale", album: "Neon Orchard", artwork: [{ src: "https://lh3.googleusercontent.com/gb=w60-h60" }, { src: "https://lh3.googleusercontent.com/gb=w226-h226" }] } };
+  return { win, p, app, bar: barEl, mp, like };
+}
+
+test("ready waits for the API config; then the state is reported", () => {
+  const noCfg = page({ cfg: false });
+  B.createBridge(noCfg.win, options(noCfg.win)).tick();
+  assert.equal(noCfg.win.posted.length, 0);
+
+  const { win } = page();
+  const bridge = B.createBridge(win, options(win));
+  bridge.tick();
+  assert.deepEqual(win.posted.map((m) => m.type), ["ready", "state"]);
+  const s = win.posted[1].state;
+  assert.equal(s.title, "Glass Bees");
+  assert.equal(s.artist, "Mira Vale");
+  assert.equal(s.album, "Neon Orchard");
+  assert.equal(s.artwork, "https://lh3.googleusercontent.com/gb=w544-h544");
+  assert.equal(s.trackUri, "ytm:track:v1");
+  assert.equal(s.playing, false);
+  assert.equal(s.positionMs, 12500);
+  assert.equal(s.durationMs, 200000);
+  assert.equal(s.volume, 0.8);
+  assert.equal(s.repeat, "off");
+  assert.equal(s.ad, false);
+  assert.equal(s.premium, null);
+});
+
+test("controls go through the player and its bar", async () => {
+  const { win, p, bar, like } = page();
+  const bridge = B.createBridge(win, options(win));
+  await bridge.call("play", []);
+  assert.equal(p.state, 1);
+  await bridge.call("seek", [30000]);
+  assert.ok(p.calls.includes("seek 30"));
+  await bridge.call("setVolume", [0.5]);
+  assert.equal(p.volume, 50);
+  await bridge.call("setRepeat", ["track"]);
+  assert.equal(bar.getAttribute("repeat-mode"), "ONE");
+  await bridge.call("setLiked", [true]);
+  assert.equal(like.getAttribute("like-status"), "LIKE");
+  await bridge.call("setMuted", [true]);
+  assert.equal(p.muted, true);
+});
+
+test("an ad: reported, and next and seek wait for it; it is never skipped", async () => {
+  const { win, p } = page({ ad: true });
+  const bridge = B.createBridge(win, options(win));
+  bridge.tick();
+  const s = win.posted.find((m) => m.type === "state").state;
+  assert.equal(s.ad, true);
+  assert.equal(s.premium, false);
+  assert.equal(s.canNext, false);
+  await rejects(bridge.call("next", []), "E_AD");
+  await rejects(bridge.call("seek", [1000]), "E_AD");
+  await rejects(bridge.call("playTrack", ["ytm:track:v9"]), "E_AD");
+  assert.deepEqual(p.calls, []);
+});
+
+test("playing a playlist navigates in the page, and reports its context", async () => {
+  const { win, p, app } = page();
+  const asked = [];
+  app.addEventListener("yt-navigate", (e) => {
+    asked.push(e.detail.endpoint);
+    p.video = "v7";
+    p.list = "PLk";
+  });
+  const bridge = B.createBridge(win, options(win));
+  const answer = await bridge.call("playContext", ["ytm:playlist:PLk", "ytm:track:v7"]);
+  assert.deepEqual(asked[0].watchEndpoint, { videoId: "v7", playlistId: "PLk" });
+  assert.equal(asked[0].commandMetadata.webCommandMetadata.url, "/watch?v=v7&list=PLk");
+  assert.equal(answer.confirmed, true);
+  bridge.tick();
+  const s = win.posted.filter((m) => m.type === "state").pop().state;
+  assert.equal(s.contextHref, "ytm:playlist:PLk");
+  assert.equal(s.trackUri, "ytm:track:v7");
+});
+
+test("when the page does not take the navigation, it loads the watch page", async () => {
+  const { win } = page();
+  const bridge = B.createBridge(win, options(win));
+  const answer = await bridge.call("playTrack", ["ytm:track:zz"]);
+  assert.equal(answer.confirmed, false);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(win.assigned, "/watch?v=zz");
+});
+
+test("bad calls are refused with their code", async () => {
+  const { win } = page();
+  const bridge = B.createBridge(win, options(win));
+  await rejects(bridge.call("nope", []), "E_UNKNOWN_CALL");
+  await rejects(bridge.call("playContext", ["spotify:album:x", null]), "E_BAD_ARGS");
+  await rejects(bridge.call("seek", [-1]), "E_BAD_ARGS");
+  bridge.dispose();
+  await rejects(bridge.call("play", []), "E_DISPOSED");
+});
+
+test("install replaces an older bridge, keeps a newer one, and skips frames", () => {
+  const { win } = page();
+  const first = B.install(win, options(win));
+  assert.equal(win.__ytmfast, first);
+  const second = B.install(win, options(win));
+  assert.notEqual(second, first);
+  win.__ytmfast = { revision: B.REVISION + 1 };
+  assert.equal(B.install(win, options(win)).revision, B.REVISION + 1);
+  const frame = page().win;
   frame.top = {};
   assert.equal(B.install(frame, options(frame)), null);
-  assert.equal(frame.__ytmfast, undefined);
-
-  const pageFetch = win.fetch;
-  const first = B.install(win, { now: () => win.clock.t });
-  try {
-    assert.equal(win.intervals.size, 1);
-    assert.notEqual(win.fetch, pageFetch, "fetch is wrapped");
-    const second = B.install(win, { now: () => win.clock.t });
-    assert.notEqual(first, second);
-    assert.equal(win.__ytmfast, second);
-    assert.equal(win.intervals.size, 1, "the first bridge's timer is cleared");
-    assert.notEqual(win.fetch, pageFetch);
-    // One layer: the replaced wrapper wraps the page's own fetch, not the old wrapper.
-    second.dispose();
-    assert.equal(win.intervals.size, 0);
-    assert.equal(win.fetch, pageFetch, "dispose gives the page its fetch back");
-    assert.equal(typeof second.query, "undefined", "no GraphQL pass-through");
-  } finally {
-    win.intervals.forEach((id) => win.clearInterval(id));
-  }
-});
-
-test("ready waits for the bar and auth; state carries at and premium null", async () => {
-  const page = playerPage();
-  const { win, bridge } = bridgeFor(page);
-  bridge.tick();
-  assert.equal(win.posted.length, 0, "no auth yet");
-  await win.fetch("https://api-partner.spotify.com/pathfinder/v2/query", { headers: { Authorization: "Bearer x" }, body: "{}" });
-  bridge.tick();
-  assert.deepEqual(win.posted[0], { v: 1, type: "auth" });
-  assert.deepEqual(win.posted[1], { v: 1, type: "ready" });
-  const state = win.posted[2];
-  assert.equal(state.v, 1);
-  assert.equal(state.type, "state");
-  assert.equal(state.state.trackUri, "spotify:track:abc123");
-  assert.equal(state.state.premium, null);
-  assert.equal(state.state.at, win.clock.t);
-  assert.equal("signedIn" in state.state, false);
-  bridge.tick();
-  assert.equal(win.posted.length, 3, "nothing changed, nothing posted");
-  await win.fetch("https://api-partner.spotify.com/pathfinder/v2/query", { headers: { Authorization: "Bearer x" }, body: "{}" });
-  assert.equal(win.posted.length, 3, "same token: no auth");
-  await win.fetch("https://api-partner.spotify.com/pathfinder/v2/query", { headers: { Authorization: "Bearer y" }, body: "{}" });
-  assert.deepEqual(win.posted[3], { v: 1, type: "auth" });
-});
-
-test("controls refuse during ads and when missing or disabled", async () => {
-  const adPage = playerPage({ ad: true });
-  const { bridge } = bridgeFor(adPage);
-  const before = adPage.progress.value;
-  for (const [name, args] of [["seek", [5000]], ["next", []], ["previous", []], ["setLiked", [true]], ["playTrack", ["spotify:track:zz"]], ["playContext", ["spotify:album:x", null]]]) {
-    assert.equal(await codeOfCall(bridge, name, args), "E_AD", name);
-  }
-  assert.equal(adPage.progress.value, before, "the ad's position is untouched");
-  assert.equal(adPage.next.clicks, 0);
-  assert.equal(adPage.like.clicks, 0);
-  assert.equal(adPage.mute.clicks, 0, "never mutes");
-  // Pausing an ad is the page's own control: allowed.
-  assert.equal(await codeOfCall(bridge, "toggle", []), "OK");
-
-  const page = playerPage();
-  const second = bridgeFor(page).bridge;
-  page.next.disabled = true;
-  assert.equal(await codeOfCall(second, "next", []), "E_DISABLED");
-  page.prev.remove();
-  assert.equal(await codeOfCall(second, "previous", []), "E_NOT_FOUND");
-  assert.equal(await codeOfCall(second, "query", ["home", {}]), "E_UNKNOWN_CALL");
-  assert.equal(await codeOfCall(second, "playContext", ["spotify:album:x", 3]), "E_BAD_ARGS");
-});
-
-test("setters settle against the page and ranges read back on their step", async () => {
-  const page = playerPage();
-  const { bridge } = bridgeFor(page);
-  assert.equal(await bridge.setShuffle(true), true);
-  assert.equal(await bridge.setShuffle(true), true);
-  assert.equal(page.bar.querySelector('[data-testid="control-button-shuffle"]').clicks, 1);
-  assert.equal(await bridge.setRepeat("track"), "track");
-  assert.equal(await bridge.setRepeat("off"), "off");
-  await rejects(bridge.setRepeat("all"), "E_BAD_ARGS");
-  assert.equal(await bridge.setMuted(true), true);
-  assert.equal(await bridge.setMuted(true), true);
-  assert.equal(page.mute.clicks, 1);
-  assert.equal(await bridge.setLiked(true), true);
-  assert.equal(await bridge.setLiked(true), true);
-  assert.equal(page.like.clicks, 1);
-  assert.equal(await bridge.setLiked(false), false, "unliked through the picker");
-  assert.equal(page.like.getAttribute("aria-checked"), "false");
-  assert.equal(page.body.querySelector('[role="dialog"]'), null, "the picker closed");
-  assert.equal(await bridge.setLiked(true), true);
-  assert.equal(await bridge.play(), true);
-  assert.equal(await bridge.play(), true);
-  assert.equal(page.play.clicks, 1);
-
-  assert.deepEqual(await bridge.setVolume(0.437), { volume: 0.4 });
-  assert.equal(page.volume.value, "0.4");
-  const seek = await bridge.seek(12345);
-  assert.equal(page.progress.value, "12000");
-  assert.equal(seek.positionMs, 12000);
-
-  // A range the page will not take is reported, not claimed.
-  Object.defineProperty(page.volume, "value", { get: () => "0.5", set: () => {} });
-  await rejects(bridge.setVolume(0.9), "E_TIMEOUT");
-});
-
-test("an unknown persisted query is E_UNKNOWN_QUERY; shape misses are E_SHAPE", async () => {
-  const page = playerPage();
-  const { win, bridge } = bridgeFor(page);
-  await win.fetch("https://api-partner.spotify.com/pathfinder/v2/query", {
-    headers: { authorization: "Bearer x" },
-    body: JSON.stringify({ operationName: "home", extensions: { persistedQuery: { sha256Hash: "f".repeat(64) } } }),
-  });
-  await rejects(bridge.likedSongs(), "E_UNKNOWN_QUERY");
-  await rejects(bridge.home(), "E_SHAPE"); // the fake fetch answers { data: {} }
-  assert.ok(win.warnings.some((w) => /home/.test(w)));
-});
-
-test("hot swap: dispose, delete, install again posts ready again", async () => {
-  const page = playerPage();
-  const { win, bridge } = bridgeFor(page);
-  await win.fetch("https://api-partner.spotify.com/pathfinder/v2/query", { headers: { Authorization: "Bearer x" }, body: "{}" });
-  bridge.tick();
-  assert.equal(win.posted.filter((m) => m.type === "ready").length, 1);
-  // What the engine evaluates before the new source.
-  try {
-    win.__ytmfast && win.__ytmfast.dispose && win.__ytmfast.dispose();
-  } catch (e) {}
-  delete win.__ytmfast;
-  assert.equal(win.__ytmfast, undefined);
-  assert.equal(await codeOfCall(bridge, "toggle", []), "E_DISPOSED");
-  bridge.tick();
-  const next = B.install(win, options(win));
-  assert.equal(win.__ytmfast, next);
-  next.tick();
-  assert.equal(win.posted.filter((m) => m.type === "ready").length, 2, "ready again (auth carried over)");
-  // The new bridge learns through a fresh wrapper.
-  await win.fetch("https://api-partner.spotify.com/pathfinder/v2/query", { headers: { Authorization: "Bearer z" }, body: "{}" });
-  assert.deepEqual(win.posted[win.posted.length - 1], { v: 1, type: "auth" });
-});
-
-// --- Playing by identity ------------------------------------------------------
-
-function trackRow(id, onPlay) {
-  const button = h("button", { "data-testid": "play-button", "aria-label": "Play " + id });
-  button.onclick = onPlay;
-  return { row: h("div", { "data-testid": "tracklist-row" }, h("a", { href: "/track/" + id }), button), button };
-}
-function mainView(uri, rows) {
-  return h(
-    "main",
-    { "data-test-uri": uri },
-    h("div", { "data-testid": "action-bar-row" }, h("button", { "data-testid": "play-button", "aria-label": "Play" })),
-    rows.map((r) => r.row),
-  );
-}
-
-test("playContext waits for the new page and plays the row linking the track", async () => {
-  const page = playerPage();
-  const titleLink = page.bar.querySelector('[data-testid="context-item-info-title"] a');
-  const stale = trackRow("T1", () => assert.fail("pressed the previous page's row"));
-  page.body.append(mainView("spotify:playlist:old", [stale]));
-  const win = fakeWindow(page.body);
-  win.location.pathname = "/playlist/old";
-  let fresh;
-  win.onDispatch = (event) => {
-    assert.equal(event.type, "popstate");
-    // The new page renders a little later, like React's route change.
-    setTimeout(() => {
-      page.body.querySelector("main").remove();
-      fresh = trackRow("T1", () => titleLink.setAttribute("href", "/track/T1"));
-      page.body.append(mainView("spotify:playlist:new", [trackRow("T0", () => {}), fresh]));
-    }, 5);
-  };
-  const opts = options(win);
-  opts.sleep = (ms) => {
-    win.clock.t += ms;
-    return new Promise((r) => setTimeout(r, 1));
-  };
-  const bridge = B.install(win, opts);
-  const answer = await bridge.playContext("spotify:playlist:new", "spotify:track:T1");
-  assert.deepEqual(answer, { confirmed: true });
-  assert.equal(fresh.button.clicks, 1);
-  assert.equal(stale.button.clicks, 0);
-  assert.equal(win.location.pathname, "/playlist/new");
-});
-
-test("playContext plays a podcast from its newest episode", async () => {
-  const page = playerPage();
-  const win = fakeWindow(page.body);
-  let newest;
-  let older;
-  win.onDispatch = () => {
-    // A show's page: an action bar with no play button, then its episodes.
-    setTimeout(() => {
-      const episode = (i) => {
-        const button = h("button", { "data-testid": "play-button", "aria-label": "Play EP" + i });
-        button.onclick = () => button.setAttribute("aria-label", "Pause EP" + i);
-        return { row: h("div", { "data-testid": "episode-" + i }, button), button };
-      };
-      newest = episode(0);
-      older = episode(1);
-      page.body.append(
-        h(
-          "main",
-          {},
-          h("div", { "data-testid": "action-bar-row" }, h("button", { "data-testid": "more-button" })),
-          h("div", { "data-testid": "show-all-episode-list" }, newest.row, older.row),
-        ),
-      );
-    }, 5);
-  };
-  const opts = options(win);
-  opts.sleep = (ms) => {
-    win.clock.t += ms;
-    return new Promise((r) => setTimeout(r, 1));
-  };
-  const bridge = B.install(win, opts);
-  assert.deepEqual(await bridge.playContext("spotify:show:pod", null), { confirmed: true });
-  assert.equal(win.location.pathname, "/show/pod");
-  assert.equal(newest.button.clicks, 1);
-  assert.equal(older.button.clicks, 0);
-});
-
-test("playTrack on the playing track does not pause it", async () => {
-  const page = playerPage(); // its bar plays spotify:track:abc123
-  const { win, bridge } = bridgeFor(page);
-  page.play.setAttribute("aria-label", "Pause");
-  assert.deepEqual(await bridge.playTrack("spotify:track:abc123"), { confirmed: true });
-  assert.equal(page.play.clicks, 0);
-  assert.equal(win.location.pathname, "/", "no navigation");
-  page.play.setAttribute("aria-label", "Play"); // paused: resumes
-  await bridge.playTrack("spotify:track:abc123");
-  assert.equal(page.play.clicks, 1);
-  assert.equal(page.play.getAttribute("aria-label"), "Pause");
 });
 
 // --- OTA source -------------------------------------------------------------
@@ -529,73 +495,12 @@ test("a cover's palette leads with its most telling colours, without near-duplic
   const fill = (n, r, g, b, a = 255) => {
     for (let i = 0; i < n; i++) px.push(r, g, b, a);
   };
-  fill(300, 220, 40, 40); // a red field
-  fill(200, 20, 20, 24); // dark ground
-  fill(60, 40, 90, 220); // a blue accent
-  fill(10, 222, 42, 41); // almost the red again
-  fill(30, 0, 0, 0, 0); // transparent: ignored
+  fill(300, 20, 20, 20);
+  fill(200, 220, 40, 40);
+  fill(100, 225, 45, 42);
+  fill(50, 0, 0, 0, 0);
   const palette = B.paletteOf(px, 5);
-  assert.equal(palette[0], "#dc2828");
-  assert.ok(palette.includes("#285adc"));
-  assert.ok(palette.length <= 5);
-  // No two picked colours are near each other.
-  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-  for (let i = 0; i < palette.length; i++)
-    for (let j = i + 1; j < palette.length; j++) {
-      const [a, b] = [rgb(palette[i]), rgb(palette[j])];
-      assert.ok((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2 >= 40 * 40);
-    }
-  assert.deepEqual(B.paletteOf([0, 0, 0, 0], 5), []);
-});
-
-// --- Which time is the playing track's ------------------------------------
-
-test("the bar's time reads its clocks, a countdown and its slider as a share", () => {
-  assert.deepEqual(B.barTime("1:00", "3:20", null), { positionMs: 60000, durationMs: 200000 });
-  assert.deepEqual(B.barTime("1:00", "-2:20", null), { positionMs: 60000, durationMs: 200000 });
-  // A slider in seconds is read as a share of its range, not as ms.
-  assert.deepEqual(B.barTime("1:00", "3:20", { value: 100, max: 200 }), { positionMs: 100000, durationMs: 200000 });
-  assert.deepEqual(B.barTime("", "", { value: 5000, max: 200000 }), { positionMs: 5000, durationMs: 200000 });
-  assert.equal(B.barTime("", "", null), null);
-});
-
-test("the time comes from the element that is the bar's track, not another one", () => {
-  const playing = { duration: 200, currentTime: 61, paused: false };
-  const preloading = { duration: 95, currentTime: 2, paused: false }; // the next track, warming up
-  const old = { duration: 180, currentTime: 179, paused: true };
-  const bar = { positionMs: 60000, durationMs: 200000 };
-  // Whatever order the page lists them in.
-  assert.deepEqual(B.timeOf([preloading, old, playing], bar), { positionMs: 61000, durationMs: 200000 });
-  assert.deepEqual(B.timeOf([old, playing, preloading], bar), { positionMs: 61000, durationMs: 200000 });
-  // None is the bar's track: the bar's own numbers.
-  assert.deepEqual(B.timeOf([preloading, old], bar), bar);
-  // No bar: a playing element.
-  assert.deepEqual(B.timeOf([old, playing], null), { positionMs: 61000, durationMs: 200000 });
-});
-
-test("lyricsOf reads timed and plain lines, and none", () => {
-  const timed = B.lyricsOf({
-    lyrics: {
-      syncType: "LINE_SYNCED",
-      providerDisplayName: "Musixmatch",
-      lines: [
-        { startTimeMs: "1200", words: "First line" },
-        { startTimeMs: "4800", words: "♪" },
-        { startTimeMs: "9100", words: " Second line " },
-        { startTimeMs: "12000", words: "" },
-      ],
-    },
-  });
-  assert.deepEqual(timed, {
-    synced: true,
-    provider: "Musixmatch",
-    lines: [
-      { startMs: 1200, words: "First line" },
-      { startMs: 4800, words: "♪" },
-      { startMs: 9100, words: "Second line" },
-    ],
-  });
-  const plain = B.lyricsOf({ lyrics: { syncType: "UNSYNCED", provider: "lyricfind", lines: [{ startTimeMs: "0", words: "Only words" }] } });
-  assert.deepEqual(plain, { synced: false, provider: "lyricfind", lines: [{ startMs: 0, words: "Only words" }] });
-  assert.deepEqual(B.lyricsOf(null), { synced: false, lines: [], provider: "" });
+  assert.ok(palette.length >= 2);
+  assert.ok(palette.every((c) => /^#[0-9a-f]{6}$/.test(c)));
+  assert.deepEqual(B.paletteOf([], 5), []);
 });

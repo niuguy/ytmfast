@@ -1,20 +1,21 @@
-// Spotish's bridge, installed in the top document of the Spotify web player
-// (CDP `Page.addScriptToEvaluateOnNewDocument`) before the player's own
+// YTMFast's bridge, installed in the top document of YouTube Music's web
+// player (CDP `Page.addScriptToEvaluateOnNewDocument`) before the page's own
 // scripts run.
 //
-// It learns what the player itself uses to talk to Spotify (the headers of its
-// GraphQL requests, the persisted queries' hashes in its bundles), so the app
-// can ask for the same data; it reports the player's state to the app and
-// presses the player's own controls for it. Nothing here is a published API:
-// every selector and field name the page offers is read in one place (`SEL`
-// and the normalizers), so a change of the web player is mended here.
+// It asks YouTube Music's own API (InnerTube, `/youtubei/v1/...`) for data
+// the way the page does, signed with the page's cookies; it reports the
+// player's state to the app from the page's player (`#movie_player`, the
+// player bar and `navigator.mediaSession`); and it presses the page's own
+// controls for the app. Nothing here is a published API: every selector is in
+// `SEL` and every answer is read by the pure parsers below (`itemOf`,
+// `trackOf`, `homeOf`, ...), so a change of the web player is mended here.
 //
 // Ads: the bridge never blocks, hides, skips or mutes an ad, and never changes
 // the volume on its own. While an ad plays it refuses seek, next, previous,
 // setLiked, playContext and playTrack (E_AD).
 //
 // SINGLE SOURCE OF TRUTH. This file is what the Rust engine `include_str!`s
-// (src/ytmusic/session.rs). `src/bridge/source.ts` is GENERATED from it so the
+// (src/ytmusic/bridge.rs). `src/bridge/source.ts` is GENERATED from it so the
 // OTA-updatable TSX bundle can carry a newer bridge (`setBridge(BRIDGE_SOURCE)`):
 //   node src/bridge/gen-source.mjs           # regenerate source.ts
 //   node src/bridge/gen-source.mjs --check   # fail if source.ts is stale
@@ -22,68 +23,420 @@
 // Bump REVISION when the behavior changes: a bridge only replaces an installed
 // one of the same or an older revision. To hot-swap, the engine runs
 // `window.__ytmfast.dispose(); delete window.__ytmfast;` and then the new
-// source; dispose() stops timers and loops and restores the page's fetch and
-// media `play` where nothing wrapped them since.
+// source; dispose() stops its timers.
 //
 // Protocol v1, every message `{ v: 1, type, ... }` through
 // `window.ytmfastEvent(JSON.stringify(message))`:
-//   { v:1, type:"ready" }                  once the player bar and auth exist
+//   { v:1, type:"ready" }                  once the player bar and the API config exist
 //   { v:1, type:"state", state:{...} }     on change, plus a 1 s heartbeat
-//   { v:1, type:"auth" }                   when the player's auth changes
+//   { v:1, type:"auth" }                   when the signed-in account changes
 // Calls: `window.__ytmfast.call(name, argsArray)` (Runtime.evaluate with
 // awaitPromise + returnByValue) resolves the plain JSON value, or rejects with
 // `Error("E_CODE: message")`. The same methods are on `window.__ytmfast`.
+//
+// URIs are `ytm:<kind>:<id>`: `ytm:track:<videoId>`, `ytm:album:<MPREb_…>`,
+// `ytm:artist:<UC…>`, `ytm:playlist:<playlistId>` (no `VL`), `ytm:mix:<id>`
+// (a radio or mix: it plays, it has no page) and `ytm:collection:LM` (Liked
+// Music).
 (function (root) {
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 8;
-  // Liked Songs' cover: the library reports it; the tracks query does not.
-  const LIKED_IMAGE = "https://misc.scdn.co/liked-songs/liked-songs-640.png";
-  let likedImage = "";
+  const REVISION = 1;
+  const ORIGIN = "https://music.youtube.com";
+  const LIKED_ID = "LM";
+  const LIKED_URI = "ytm:collection:" + LIKED_ID;
 
   // --- The page's names, in one place ----------------------------------------
 
   const SEL = {
-    bar: '[data-testid="now-playing-bar"]',
-    playPause: '[data-testid="control-button-playpause"]',
-    next: '[data-testid="control-button-skip-forward"]',
-    previous: '[data-testid="control-button-skip-back"]',
-    shuffle: '[data-testid="control-button-shuffle"]',
-    repeat: '[data-testid="control-button-repeat"]',
-    progress: '[data-testid="playback-progressbar"] input[type="range"]',
-    position: '[data-testid="playback-position"]',
-    duration: '[data-testid="playback-duration"]',
-    volume: '[data-testid="volume-bar"] input[type="range"]',
-    mute: '[data-testid="volume-bar-toggle-mute-button"]',
-    // The widget's test id has a version suffix (`now-playing-widget-v2`).
-    like: '[data-testid^="now-playing-widget"] button[aria-checked]',
-    // A liked track's button opens an "Add to playlist" picker; Liked Songs
-    // is a checkbox item of it.
-    likedChoice: '[role="menuitemcheckbox"] [aria-labelledby$="spotify:collection:tracks"]',
-    title: '[data-testid="context-item-info-title"] a, [data-testid="context-item-link"]',
-    context:
-      '[data-testid^="now-playing-widget"] a[href*="/playlist/"], [data-testid^="now-playing-widget"] a[href*="/album/"], [data-testid^="now-playing-widget"] a[href*="/artist/"], [data-testid^="now-playing-widget"] a[href*="/collection/"]',
-    adMarker: '[data-testid="context-item-info-ad-subtitle"], [data-testid="ad-link"], [data-testid="ad-type-indicator"]',
-    login: '[data-testid="login-button"]',
-    topBar: '[data-testid="top-bar"], [data-testid="topbar"], [data-testid="global-nav-bar"], #global-nav-bar',
-    upgrade: '[data-testid="upgrade-button"], a[href*="/premium"], button[aria-label*="Premium" i]',
-    userWidget: '[data-testid="user-widget-link"], [data-testid="user-widget-name"]',
-    actionPlay: '[data-testid="action-bar-row"] [data-testid="play-button"]',
-    // A podcast's page has no play button of its own: its newest episode's.
-    showPlay: '[data-testid="show-all-episode-list"] [data-testid="episode-0"] [data-testid="play-button"]',
-    row: '[data-testid="tracklist-row"]',
-    rowPlay: 'button[data-testid="play-button"], button[aria-label^="Play"], button[aria-label^="Pause"]',
-    scroller: [
-      '[data-testid="playlist-tracklist"]', // its closest scroll viewport
-      ".main-view-container [data-overlayscrollbars-viewport]",
-      ".main-view-container__scroll-node",
-    ],
+    app: "ytmusic-app",
+    bar: "ytmusic-player-bar",
+    player: "#movie_player",
+    video: "video",
+    playPause: "#play-pause-button",
+    next: ".next-button",
+    previous: ".previous-button",
+    shuffle: ".shuffle",
+    repeat: ".repeat",
+    like: "ytmusic-like-button-renderer",
+    likeButton: ["#button-shape-like button", ".like", "#button-shape-like"],
+    barImage: "img.image, .thumbnail img",
+    barTitle: ".title",
+    barByline: ".byline",
+    // "Video paused. Continue watching?" after a long while with no input.
+    youThere: "ytmusic-you-there-renderer",
+    youThereButton: "button, tp-yt-paper-button, yt-button-renderer",
   };
-  const BUNDLE_HOST = /(^|\.)(spotify\.com|scdn\.co|spotifycdn\.com)$/i;
-  const HASH_RE = /"([A-Za-z0-9_]+)","(?:query|mutation)","([0-9a-f]{64})"/g;
+
+  const PAGE_TYPE = {
+    ALBUM: "MUSIC_PAGE_TYPE_ALBUM",
+    PLAYLIST: "MUSIC_PAGE_TYPE_PLAYLIST",
+    ARTIST: "MUSIC_PAGE_TYPE_ARTIST",
+    USER_CHANNEL: "MUSIC_PAGE_TYPE_USER_CHANNEL",
+    LIBRARY_ARTIST: "MUSIC_PAGE_TYPE_LIBRARY_ARTIST",
+  };
+
+  // --- Errors ----------------------------------------------------------------
+
+  const fail = (code, message) => {
+    const error = new Error(code + ": " + message);
+    error.code = code;
+    return error;
+  };
+  const codeOf = (error) => {
+    const m = /^(E_[A-Z_]+):/.exec(String((error && error.message) || error));
+    return m ? m[1] : "E_INTERNAL";
+  };
+  const messageOf = (error) => {
+    const text = String((error && error.message) || error || "error");
+    return /^E_[A-Z_]+:/.test(text) ? text : "E_INTERNAL: " + text;
+  };
+  const envelope = (type, extra) => Object.assign({ v: PROTOCOL, type }, extra || {});
+  const toError = (error) => {
+    if (error instanceof Error && /^E_[A-Z_]+:/.test(error.message)) return error;
+    const normalized = new Error(messageOf(error));
+    normalized.code = codeOf(normalized);
+    return normalized;
+  };
 
   // --- Pure helpers (exported to the node tests) -----------------------------
+
+  const dig = (object, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), object);
+
+  // The first value under `key` anywhere in `object`, depth first.
+  const find = (object, key, depth) => {
+    const d = depth || 0;
+    if (!object || typeof object !== "object" || d > 40) return undefined;
+    if (!Array.isArray(object) && Object.prototype.hasOwnProperty.call(object, key)) return object[key];
+    for (const k in object) {
+      const found = find(object[k], key, d + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  // Every value under `key` anywhere in `object`, in document order (not
+  // looking inside a match).
+  const findAll = (object, key, out, depth) => {
+    const list = out || [];
+    const d = depth || 0;
+    if (!object || typeof object !== "object" || d > 40) return list;
+    if (!Array.isArray(object) && Object.prototype.hasOwnProperty.call(object, key)) {
+      list.push(object[key]);
+      return list;
+    }
+    for (const k in object) findAll(object[k], key, list, d + 1);
+    return list;
+  };
+
+  // The text of a `{ runs: [...] }` or `{ simpleText }`.
+  const text = (t) => {
+    if (!t) return "";
+    if (typeof t === "string") return t;
+    if (t.simpleText != null) return String(t.simpleText);
+    if (Array.isArray(t.runs)) return t.runs.map((r) => (r && r.text) || "").join("");
+    return "";
+  };
+  const runsOf = (t) => (t && Array.isArray(t.runs) ? t.runs : []);
+  // YouTube's separator, as the app writes it.
+  const tidy = (s) => String(s || "").replace(/\s+[•·]\s+/g, " · ").trim();
+
+  const clockMs = (value) => {
+    if (!value) return 0;
+    const raw = String(value).trim();
+    if (!/^\d+(:\d{1,2}){1,2}$/.test(raw)) return 0;
+    return raw.split(":").map(Number).reduce((acc, p) => acc * 60 + p, 0) * 1000;
+  };
+  const isClock = (value) => /^\d+(:\d{1,2}){1,2}$/.test(String(value || "").trim());
+
+  // The best thumbnail URL under `holder`: the largest; Google's image hosts
+  // resized to `size` (their URLs carry `=w<n>-h<n>`).
+  const thumbOf = (holder, size) => {
+    const list = find(holder, "thumbnails");
+    if (!Array.isArray(list) || !list.length) return "";
+    const best = list.reduce((a, b) => ((b && b.width) || 0) >= ((a && a.width) || 0) ? b : a, list[0]);
+    let url = (best && best.url) || "";
+    if (url.startsWith("//")) url = "https:" + url;
+    const want = size || 544;
+    if (/googleusercontent\.com|ggpht\.com/.test(url)) url = url.replace(/=w\d+-h\d+/, "=w" + want + "-h" + want);
+    return url;
+  };
+
+  const pageTypeOf = (endpoint) =>
+    dig(endpoint, "browseEndpoint.browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig.pageType") || "";
+
+  // What a navigation endpoint opens or plays, as `{ uri, kind }`; null when
+  // the app has no use for it.
+  const targetOf = (endpoint) => {
+    if (!endpoint) return null;
+    const watch = endpoint.watchEndpoint;
+    if (watch && watch.videoId) return { uri: "ytm:track:" + watch.videoId, kind: "track" };
+    if (watch && watch.playlistId) return { uri: "ytm:mix:" + watch.playlistId, kind: "mix" };
+    const list = endpoint.watchPlaylistEndpoint;
+    if (list && list.playlistId) return { uri: "ytm:mix:" + list.playlistId, kind: "mix" };
+    const browse = endpoint.browseEndpoint;
+    const id = browse && browse.browseId;
+    if (!id) return null;
+    const type = pageTypeOf(endpoint);
+    if (type === PAGE_TYPE.ALBUM) return { uri: "ytm:album:" + id, kind: "album" };
+    if (type === PAGE_TYPE.PLAYLIST || /^VL/.test(id)) {
+      const playlistId = id.replace(/^VL/, "");
+      return playlistId === LIKED_ID ? { uri: LIKED_URI, kind: "collection" } : { uri: "ytm:playlist:" + playlistId, kind: "playlist" };
+    }
+    if (type === PAGE_TYPE.LIBRARY_ARTIST) return { uri: "ytm:artist:" + id.replace(/^MPLA/, ""), kind: "artist" };
+    if (type === PAGE_TYPE.ARTIST || type === PAGE_TYPE.USER_CHANNEL || /^UC/.test(id)) return { uri: "ytm:artist:" + id, kind: "artist" };
+    return null;
+  };
+
+  const flexColumns = (r) => ((r && r.flexColumns) || []).map((c) => (c && c.musicResponsiveListItemFlexColumnRenderer && c.musicResponsiveListItemFlexColumnRenderer.text) || null);
+  const fixedColumns = (r) => ((r && r.fixedColumns) || []).map((c) => (c && c.musicResponsiveListItemFixedColumnRenderer && c.musicResponsiveListItemFixedColumnRenderer.text) || null);
+
+  // The video a list row plays, if it is a song or video.
+  const videoIdOf = (r) =>
+    dig(r, "playlistItemData.videoId") ||
+    dig(r, "overlay.musicItemThumbnailOverlayRenderer.content.musicPlayButtonRenderer.playNavigationEndpoint.watchEndpoint.videoId") ||
+    dig(runsOf(flexColumns(r)[0])[0], "navigationEndpoint.watchEndpoint.videoId") ||
+    "";
+
+  // A row of a list (`musicResponsiveListItemRenderer`) as a track; null
+  // when it is not one. `fallback` fills what album rows leave out (their
+  // artist, album and cover).
+  const trackOf = (r, index, fallback) => {
+    if (!r) return null;
+    const f = fallback || {};
+    if (r.navigationEndpoint && r.navigationEndpoint.browseEndpoint) return null; // an album, artist or playlist row
+    const videoId = videoIdOf(r);
+    const columns = flexColumns(r);
+    const name = text(columns[0]);
+    if (!videoId || !name) return null;
+    const rest = columns.slice(1).flatMap(runsOf);
+    const artists = rest.filter((run) => {
+      const t = pageTypeOf(run.navigationEndpoint);
+      return t === PAGE_TYPE.ARTIST || t === PAGE_TYPE.USER_CHANNEL;
+    });
+    const album = rest.find((run) => pageTypeOf(run.navigationEndpoint) === PAGE_TYPE.ALBUM);
+    let artistText = artists.map((run) => run.text).join(", ");
+    if (!artistText && columns[1]) {
+      // Unlinked artists: the second column's first part that is not a kind
+      // ("Song", "Video") or a count.
+      const parts = text(columns[1]).split(/\s+[•·]\s+/).filter((p) => p && !isClock(p));
+      artistText = parts.length > 1 ? parts[1] : parts[0] || "";
+    }
+    const fixed = fixedColumns(r).map(text).find(isClock);
+    const clock = fixed || rest.map((run) => run.text).find(isClock) || "";
+    const badges = JSON.stringify(r.badges || []);
+    const setVideoId = dig(r, "playlistItemData.playlistSetVideoId") || "";
+    return {
+      uri: "ytm:track:" + videoId,
+      uid: setVideoId || videoId + ":" + (index || 0),
+      name,
+      artists: artistText || f.artists || "",
+      album: (album && album.text) || f.album || "",
+      albumUri: album ? "ytm:album:" + album.navigationEndpoint.browseEndpoint.browseId : f.albumUri || "",
+      image: thumbOf(r.thumbnail, 120) || f.image || "",
+      durationMs: clockMs(clock),
+      explicit: badges.includes("MUSIC_EXPLICIT_BADGE"),
+      playable: r.musicItemRendererDisplayPolicy !== "MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT",
+    };
+  };
+
+  // A card or a row as an item (`{ uri, kind, name, subtitle, image }`), or
+  // null. Takes `musicTwoRowItemRenderer` and `musicResponsiveListItemRenderer`.
+  const itemOf = (r) => {
+    if (!r) return null;
+    if (r.flexColumns) {
+      const columns = flexColumns(r);
+      const name = text(columns[0]);
+      let target = targetOf(r.navigationEndpoint);
+      if (!target) {
+        const videoId = videoIdOf(r);
+        if (videoId) target = { uri: "ytm:track:" + videoId, kind: "track" };
+      }
+      if (!target || !name) return null;
+      return { uri: target.uri, kind: target.kind, name, subtitle: tidy(columns.slice(1).map(text).filter(Boolean).join(" · ")), image: thumbOf(r.thumbnail, 226) };
+    }
+    const name = text(r.title);
+    const target = targetOf(r.navigationEndpoint) || targetOf(dig(runsOf(r.title)[0], "navigationEndpoint"));
+    if (!target || !name) return null;
+    return { uri: target.uri, kind: target.kind, name, subtitle: tidy(text(r.subtitle)), image: thumbOf(r.thumbnailRenderer || r.thumbnail, 226) };
+  };
+
+  // Every item (card or row) of a shelf's `contents`.
+  const itemsOf = (contents) =>
+    (contents || [])
+      .map((c) => itemOf((c && (c.musicTwoRowItemRenderer || c.musicResponsiveListItemRenderer || c.musicMultiRowListItemRenderer)) || null))
+      .filter(Boolean);
+
+  const dedupe = (items) => {
+    const seen = new Set();
+    return items.filter((i) => (seen.has(i.uri) ? false : (seen.add(i.uri), true)));
+  };
+
+  const greetingAt = (hour) => (hour < 5 ? "Good evening" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+
+  // Home's sections (`browse` FEmusic_home, and its continuations).
+  const sectionsOf = (json) =>
+    findAll(json, "musicCarouselShelfRenderer")
+      .concat(findAll(json, "musicImmersiveCarouselShelfRenderer"))
+      .map((shelf) => ({ title: text(find(shelf.header, "title")), items: itemsOf(shelf.contents) }))
+      .filter((s) => s.title && s.items.length);
+  const homeOf = (json, hour) => ({ greeting: greetingAt(hour == null ? 12 : hour), sections: sectionsOf(json) });
+
+  // The continuation token of a list or a page, if it has more.
+  const continuationOf = (json) =>
+    find(json, "nextContinuationData") ? find(json, "nextContinuationData").continuation : dig(find(json, "continuationItemRenderer"), "continuationEndpoint.continuationCommand.token") || "";
+
+  // A search's answer: the top result first, then each list in the order
+  // found. Classified by what each entry opens, not by the shelves' titles
+  // (they are in the account's language).
+  const searchOf = (json) => {
+    const out = { tracks: [], artists: [], albums: [], playlists: [] };
+    const add = (item) => {
+      if (!item) return;
+      if (item.kind === "artist") out.artists.push(item);
+      else if (item.kind === "album") out.albums.push(item);
+      else if (item.kind === "playlist" || item.kind === "mix" || item.kind === "collection") out.playlists.push(item);
+    };
+    const card = find(json, "musicCardShelfRenderer");
+    if (card) {
+      const top = itemOf({ title: card.title, subtitle: card.subtitle, thumbnail: card.thumbnail, navigationEndpoint: dig(runsOf(card.title)[0], "navigationEndpoint") });
+      if (top && top.kind === "track") {
+        const t = { uri: top.uri, uid: "", name: top.name, artists: "", album: "", albumUri: "", image: top.image, durationMs: 0, explicit: false, playable: true };
+        const subtitle = runsOf(card.subtitle);
+        t.artists = subtitle.filter((r) => pageTypeOf(r.navigationEndpoint) === PAGE_TYPE.ARTIST).map((r) => r.text).join(", ");
+        const album = subtitle.find((r) => pageTypeOf(r.navigationEndpoint) === PAGE_TYPE.ALBUM);
+        if (album) Object.assign(t, { album: album.text, albumUri: "ytm:album:" + album.navigationEndpoint.browseEndpoint.browseId });
+        t.durationMs = clockMs(subtitle.map((r) => r.text).find(isClock));
+        out.tracks.push(t);
+      } else add(top);
+    }
+    findAll(json, "musicResponsiveListItemRenderer").forEach((r, i) => {
+      const t = trackOf(r, i);
+      if (t) {
+        t.uid = "";
+        out.tracks.push(t);
+      } else add(itemOf(r));
+    });
+    const byUri = (list) => dedupe(list);
+    return { tracks: byUri(out.tracks).slice(0, 20), artists: byUri(out.artists), albums: byUri(out.albums), playlists: byUri(out.playlists) };
+  };
+
+  // A collection page's header renderer, whichever kind the page uses.
+  const headerOf = (json) =>
+    find(json, "musicResponsiveHeaderRenderer") ||
+    find(json, "musicDetailHeaderRenderer") ||
+    find(json, "musicImmersiveHeaderRenderer") ||
+    find(json, "musicVisualHeaderRenderer") ||
+    find(json, "musicEditablePlaylistDetailHeaderRenderer") ||
+    {};
+
+  const countOf = (value) => {
+    const m = /(\d[\d,. ]*)/.exec(String(value || ""));
+    return m ? Number(m[1].replace(/[,. ]/g, "")) || 0 : 0;
+  };
+
+  // The playlist an album plays (`OLAK5uy_…`): its canonical URL's `list`,
+  // else a play button's.
+  const albumPlaylistOf = (json) => {
+    const canonical = dig(find(json, "microformatDataRenderer"), "urlCanonical") || "";
+    const m = /[?&]list=([A-Za-z0-9_-]+)/.exec(canonical);
+    if (m) return m[1];
+    const watch = findAll(json, "watchPlaylistEndpoint").concat(findAll(json, "watchEndpoint")).find((w) => w && w.playlistId);
+    return (watch && watch.playlistId) || "";
+  };
+
+  // An album or a playlist page (`browse` MPREb_… or VL…).
+  const collectionOf = (json, uri, kind) => {
+    const h = headerOf(json);
+    const header = h.header ? headerOf(h.header) : h;
+    const name = text(header.title);
+    const owner = text(header.straplineTextOne);
+    const subtitle = tidy([owner, text(header.subtitle)].filter(Boolean).join(" · "));
+    const description = text(find(header.description, "description")) || text(header.description);
+    const image = thumbOf(header.thumbnail, 544);
+    const shelf = find(json, "musicPlaylistShelfRenderer") || find(json, "musicShelfRenderer") || {};
+    const fallback = kind === "album" ? { artists: owner || text(header.subtitle).split(/\s+[•·]\s+/).pop(), album: name, albumUri: uri, image } : {};
+    const tracks = (shelf.contents || []).map((c, i) => trackOf(c && c.musicResponsiveListItemRenderer, i, fallback)).filter(Boolean);
+    const total = countOf(text(header.secondSubtitle)) || countOf(text(header.subtitle).split(/\s+[•·]\s+/).find((p) => /\d/.test(p) && !/^\d{4}$/.test(p))) || tracks.length;
+    return {
+      collection: {
+        header: { uri, kind, name: name || (kind === "collection" ? "Liked Music" : ""), subtitle, image, description: description.trim() },
+        tracks,
+        releases: [],
+        total: Math.max(total, tracks.length),
+      },
+      continuation: continuationOf(shelf),
+      playlistId: kind === "album" ? albumPlaylistOf(json) : "",
+    };
+  };
+
+  // The rows a continuation of a list adds.
+  const continuedTracks = (json, offset, fallback) => {
+    const rows = findAll(json, "musicResponsiveListItemRenderer");
+    return { tracks: rows.map((r, i) => trackOf(r, offset + i, fallback)).filter(Boolean), continuation: continuationOf(json.continuationContents || json.onResponseReceivedActions || json) };
+  };
+
+  // An artist's page: top songs, their releases (albums and singles), and
+  // what plays when the page's play button is pressed.
+  const artistOf = (json, uri) => {
+    const h = headerOf(json);
+    const name = text(h.title);
+    const subtitle = tidy(text(find(h, "subscriberCountText")) || text(h.monthlyListenerCount) || "Artist");
+    const description = text(h.description) || text(find(h.description, "description"));
+    const songsShelf = find(json, "musicShelfRenderer") || {};
+    const tracks = (songsShelf.contents || []).map((c, i) => trackOf(c && c.musicResponsiveListItemRenderer, i)).filter(Boolean);
+    const releases = dedupe(findAll(json, "musicCarouselShelfRenderer").flatMap((shelf) => itemsOf(shelf.contents)).filter((i) => i.kind === "album"));
+    const songsBrowse = dig(runsOf(songsShelf.title)[0], "navigationEndpoint.browseEndpoint.browseId") || "";
+    const play = findAll(h, "watchEndpoint").concat(findAll(h, "watchPlaylistEndpoint")).find((w) => w && w.playlistId) || null;
+    return {
+      collection: { header: { uri, kind: "artist", name, subtitle, image: thumbOf(h.thumbnail, 544), description: description.trim() }, tracks, releases, total: tracks.length },
+      songsPlaylistId: songsBrowse.replace(/^VL/, ""),
+      play: play ? { playlistId: play.playlistId, params: play.params || "" } : null,
+    };
+  };
+
+  // The library's playlists, albums and artists, Liked Music first.
+  const libraryOf = (answers) => {
+    const items = dedupe(
+      answers.flatMap((json) =>
+        findAll(json, "musicTwoRowItemRenderer")
+          .concat(findAll(json, "musicResponsiveListItemRenderer"))
+          .map(itemOf)
+          .filter((i) => i && i.kind !== "track" && i.kind !== "mix"),
+      ),
+    );
+    const liked = items.find((i) => i.uri === LIKED_URI);
+    const rest = items.filter((i) => i.uri !== LIKED_URI);
+    return { items: [liked || { uri: LIKED_URI, kind: "collection", name: "Liked Music", subtitle: "Auto playlist", image: "" }].concat(rest) };
+  };
+
+  // The signed-in account, from `account/account_menu`.
+  const meOf = (json, datasyncId) => {
+    const h = find(json, "activeAccountHeaderRenderer");
+    if (!h) throw fail("E_SIGNED_OUT", "no account");
+    const name = text(h.accountName);
+    const handle = text(h.channelHandle);
+    const id = String(datasyncId || "").split("||")[0] || handle || name;
+    return { id, name, username: handle || name, image: thumbOf(h.accountPhoto, 88) };
+  };
+
+  // The lyrics tab of a song (`next`): the browse id of its lyrics, or "".
+  const lyricsBrowseIdOf = (json) => {
+    const tab = findAll(json, "tabRenderer").find((t) => /^MPLYt/.test(dig(t, "endpoint.browseEndpoint.browseId") || ""));
+    return tab ? tab.endpoint.browseEndpoint.browseId : "";
+  };
+  // Lyrics from their `browse` answer (plain words; YouTube Music's timed
+  // lyrics are for its apps).
+  const lyricsOf = (json) => {
+    const shelf = json && find(json, "musicDescriptionShelfRenderer");
+    if (!shelf) return { synced: false, lines: [], provider: "" };
+    const lines = text(shelf.description)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((words) => ({ startMs: 0, words }));
+    return { synced: false, lines, provider: text(shelf.footer).replace(/^Source:\s*/i, "") };
+  };
 
   // A cover's palette: the colours that carry it, most telling first, from
   // its pixels (`[r, g, b, a, ...]`, a small sample). k-means over the
@@ -98,7 +451,6 @@
     }
     if (points.length === 0) return [];
     const k = Math.min(8, points.length);
-    // Seeds spread through the sample (deterministic).
     let centers = Array.from({ length: k }, (_, j) => points[Math.floor(((j + 0.5) * points.length) / k)].slice());
     let counts = new Array(k).fill(0);
     for (let round = 0; round < 10; round++) {
@@ -141,101 +493,6 @@
     return picked.map((c) => "#" + hex(c[0]) + hex(c[1]) + hex(c[2]));
   };
 
-  const fail = (code, message) => {
-    const error = new Error(code + ": " + message);
-    error.code = code;
-    return error;
-  };
-  const codeOf = (error) => {
-    const m = /^(E_[A-Z_]+):/.exec(String((error && error.message) || error));
-    return m ? m[1] : "E_INTERNAL";
-  };
-  const messageOf = (error) => {
-    const text = String((error && error.message) || error || "error");
-    return /^E_[A-Z_]+:/.test(text) ? text : "E_INTERNAL: " + text;
-  };
-
-  // The protocol's envelope.
-  const envelope = (type, extra) => Object.assign({ v: PROTOCOL, type }, extra || {});
-  // A call's answer, as the engine reads it (a JSON string).
-  // A failure as the engine reads it: an Error whose message is "E_CODE: …".
-  const toError = (error) => {
-    if (error instanceof Error && /^E_[A-Z_]+:/.test(error.message)) return error;
-    const normalized = new Error(messageOf(error));
-    normalized.code = codeOf(normalized);
-    return normalized;
-  };
-
-  const dig = (object, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), object);
-  // The value at `path` of a query's `data`, or E_SHAPE when the page changed
-  // its answer under us.
-  const need = (op, data, path, warn) => {
-    const value = dig(data, path);
-    if (value === undefined || value === null) {
-      if (warn) warn("[spotish] unexpected shape of " + op + ": missing " + path);
-      throw fail("E_SHAPE", op + "." + path);
-    }
-    return value;
-  };
-  // A `__typename` saying the entity does not exist (or is unavailable).
-  const missingEntity = (op, entity, uri) => {
-    const name = (entity && entity.__typename) || "";
-    if (/NotFound|Unavailable|GenericError|RestrictedContent/i.test(name)) throw fail("E_NOT_FOUND", op + " " + (uri || "") + " (" + name + ")");
-  };
-
-  const kindOf = (uri) => (uri || "").split(":")[1] || "";
-  const idOf = (uri) => (uri || "").split(":")[2] || "";
-
-  // A track's lyrics from Spotify's color-lyrics answer: whether its lines
-  // are timed (`LINE_SYNCED`), each line's start in ms and its words (an
-  // instrumental break, empty, as "♪"), and who provides them. No lyrics:
-  // no lines.
-  const lyricsOf = (json) => {
-    const l = json && json.lyrics;
-    if (!l || !Array.isArray(l.lines)) return { synced: false, lines: [], provider: "" };
-    const synced = l.syncType === "LINE_SYNCED";
-    const lines = l.lines
-      .map((line) => ({ startMs: synced ? Number(line && line.startTimeMs) || 0 : 0, words: String((line && line.words) || "").trim() || "♪" }))
-      .filter((line, i, all) => !(line.words === "♪" && i === all.length - 1));
-    return { synced, lines, provider: l.providerDisplayName || l.provider || "" };
-  };
-  const trackIdFromHref = (href) => {
-    const text = String(href || "");
-    const m = /\/track\/([A-Za-z0-9]+)/.exec(text) || /spotify(?::|%3A)track(?::|%3A)([A-Za-z0-9]+)/i.exec(text);
-    return m ? m[1] : "";
-  };
-  const pathOf = (uri) => {
-    const parts = (uri || "").split(":");
-    if (parts[0] !== "spotify") throw fail("E_BAD_ARGS", "not a Spotify URI: " + uri);
-    if (parts[1] === "collection" || (parts[1] === "user" && parts[parts.length - 1] === "collection")) return "/collection/tracks";
-    if (!/^(playlist|album|artist|track|show|episode)$/.test(parts[1]) || !/^[A-Za-z0-9]+$/.test(parts[2] || "")) {
-      throw fail("E_BAD_ARGS", "cannot open " + uri);
-    }
-    return "/" + parts[1] + "/" + parts[2];
-  };
-  const isCollection = (uri) => pathOf(uri) === "/collection/tracks";
-
-  const clockMs = (text) => {
-    if (!text) return 0;
-    const parts = String(text).trim().split(":").map(Number);
-    if (!parts.length || parts.some(isNaN)) return 0;
-    return parts.reduce((acc, p) => acc * 60 + p, 0) * 1000;
-  };
-
-  // A range input's value for `value`, clamped and on its step.
-  const quantize = (value, min, max, step) => {
-    let v = Math.min(max, Math.max(min, value));
-    if (step > 0) v = min + Math.round((v - min) / step) * step;
-    v = Math.min(max, Math.max(min, v));
-    return Math.round(v * 1e9) / 1e9;
-  };
-  const rangeOf = (input) => {
-    const min = Number(input.min) || 0;
-    const max = input.max === "" || input.max == null || isNaN(Number(input.max)) ? 100 : Number(input.max);
-    const step = input.step === "any" ? 0 : input.step === "" || input.step == null ? 1 : Number(input.step) || 0;
-    return { min, max, step };
-  };
-
   // A player's state equal for reporting, but for the moving clock.
   const stateKey = (s) => {
     const rest = Object.assign({}, s);
@@ -252,207 +509,71 @@
     return next.playing && now - last.at >= heartbeatMs;
   };
 
-  // The progress bar's time, in milliseconds: its clocks give the length
-  // (the right one may count down, "-1:23", what is left), its slider the
-  // share played (its unit may be ms, seconds or a fraction, so it is read
-  // as a share of its range). Null when the bar shows nothing.
-  const barTime = (positionText, durationText, slider) => {
-    const pos = clockMs(positionText);
-    const raw = String(durationText || "").trim();
-    const dur = raw.startsWith("-") ? pos + clockMs(raw.slice(1)) : clockMs(raw);
-    if (dur > 0) {
-      const share = slider && slider.max > 0 ? Math.min(1, Math.max(0, slider.value / slider.max)) : null;
-      return { positionMs: share === null ? pos : Math.round(share * dur), durationMs: dur };
-    }
-    if (slider && slider.max > 0) return { positionMs: Math.round(slider.value), durationMs: Math.round(slider.max) };
-    return null;
-  };
+  const REPEAT = { NONE: "off", ALL: "context", ONE: "track" };
+  const repeatOf = (attribute) => REPEAT[String(attribute || "").toUpperCase()] || "off";
 
-  // The position and length of what plays, from the page's media elements
-  // and its progress bar (`bar`: { positionMs, durationMs } or null). The
-  // page can hold more than one element at once (the next track preloading,
-  // an ad's, an old one not yet dropped), so an element counts only when its
-  // length is the bar's; one that plays is preferred, and of those the one
-  // nearest the bar's position. With no element matching, the bar's own
-  // numbers; with no bar, a playing element, else any.
-  const pickMedia = (elements, bar) => {
-    const known = elements.filter((m) => m && isFinite(m.duration) && m.duration > 0);
-    if (bar && bar.durationMs > 0) {
-      const same = known.filter((m) => Math.abs(m.duration * 1000 - bar.durationMs) <= 2000);
-      const pool = same.some((m) => !m.paused) ? same.filter((m) => !m.paused) : same;
-      if (!pool.length) return null;
-      return pool.reduce((a, b) => (Math.abs(b.currentTime * 1000 - bar.positionMs) < Math.abs(a.currentTime * 1000 - bar.positionMs) ? b : a));
-    }
-    return known.find((e) => !e.paused) || known[0] || null;
-  };
-  const timeOf = (elements, bar) => {
-    const m = pickMedia(elements, bar);
-    if (m) return { positionMs: Math.round(m.currentTime * 1000), durationMs: Math.round(m.duration * 1000) };
-    return bar && bar.durationMs > 0 ? { positionMs: bar.positionMs, durationMs: bar.durationMs } : null;
-  };
-
-  // The ad check: the page's marker, or its own controls saying "not now".
-  const adFrom = ({ marker, metaTitle, hasTrack, nextDisabled, progressDisabled }) =>
-    !!marker || /\badvertisement\b/i.test(metaTitle || "") || !!(hasTrack && nextDisabled && progressDisabled);
-
-  const isDisabled = (el) => !!el && (el.disabled === true || (el.getAttribute && el.getAttribute("aria-disabled") === "true"));
-  // The control `name`, usable now, or the reason it is not.
+  const hasClass = (el, name) => !!el && ` ${(el.getAttribute && el.getAttribute("class")) || ""} `.includes(` ${name} `);
+  const isDisabled = (el) => !!el && (el.disabled === true || (el.getAttribute && (el.getAttribute("aria-disabled") === "true" || el.getAttribute("disabled") != null)));
   const usable = (name, el) => {
     if (!el) throw fail("E_NOT_FOUND", "control " + name);
     if (isDisabled(el)) throw fail("E_DISABLED", "control " + name);
     return el;
   };
 
-  // Presses `press` until `read()` equals `target`, at most `tries` presses,
-  // each awaiting a visible change (no change means the page ignored it, so it
-  // stops instead of pressing blind and overshooting).
-  const settle = async ({ name, read, target, press, tries = 3, timeout = 1500, every = 50, sleep, now }) => {
-    let current = read();
-    for (let i = 0; current !== target; i++) {
-      if (i >= tries) throw fail("E_TIMEOUT", name + " is " + JSON.stringify(current) + ", not " + JSON.stringify(target));
-      const before = current;
-      press();
-      const end = now() + timeout;
-      while (current === before && now() < end) {
-        await sleep(every);
-        current = read();
-      }
-      if (current === before) throw fail("E_TIMEOUT", name + " did not change from " + JSON.stringify(before));
-    }
-    return current;
+  // `ytm:<kind>:<id>` → { kind, id }, or E_BAD_ARGS.
+  const parseUri = (uri) => {
+    const parts = String(uri || "").split(":");
+    if (parts[0] !== "ytm" || !parts[1] || !/^[A-Za-z0-9_-]+$/.test(parts[2] || "")) throw fail("E_BAD_ARGS", "not a YouTube Music URI: " + uri);
+    return { kind: parts[1], id: parts[2] };
   };
 
-  // The persisted-query hashes: learned from live requests, else scanned from
-  // the player's bundles. A miss is remembered with exponential backoff, one
-  // scan runs at a time, and a bundle is downloaded once.
-  const createHashCache = ({ now, listUrls, fetchText, ops = {}, scanned = new Set(), misses = new Map(), baseMs = 5000, maxMs = 300000 }) => {
-    let inflight = null;
-    const scan = () => {
-      if (inflight) return inflight;
-      inflight = (async () => {
-        let urls = [];
-        try {
-          urls = listUrls().filter((u) => !scanned.has(u));
-        } catch (_) {}
-        let fetched = 0;
-        await Promise.all(
-          urls.map(async (url) => {
-            try {
-              const text = await fetchText(url);
-              scanned.add(url);
-              fetched++;
-              for (const m of String(text).matchAll(HASH_RE)) if (!ops[m[1]]) ops[m[1]] = m[2];
-            } catch (_) {} // left unscanned: tried again on the next scan
-          }),
-        );
-        return fetched;
-      })().finally(() => {
-        inflight = null;
+  // The watch page URL (and its in-app endpoint) for `{ videoId, playlistId, params }`.
+  const watchOf = (target) => {
+    const query = [];
+    if (target.videoId) query.push("v=" + encodeURIComponent(target.videoId));
+    if (target.playlistId) query.push("list=" + encodeURIComponent(target.playlistId));
+    const url = "/watch?" + query.join("&");
+    const inner = {};
+    if (target.videoId) inner.videoId = target.videoId;
+    if (target.playlistId) inner.playlistId = target.playlistId;
+    if (target.params) inner.params = target.params;
+    const endpoint = target.videoId ? { watchEndpoint: inner } : { watchPlaylistEndpoint: inner };
+    endpoint.commandMetadata = { webCommandMetadata: { url, webPageType: "WEB_PAGE_TYPE_WATCH", rootVe: 3832 } };
+    return { url, endpoint };
+  };
+
+  // The URI of what plays, from the queue's playlist and what the app last
+  // asked to play.
+  const contextOf = (list, asked) => {
+    if (!list) return "";
+    if (asked && asked.list === list) return asked.uri;
+    if (list === LIKED_ID) return LIKED_URI;
+    if (/^RD/.test(list)) return "ytm:mix:" + list;
+    return "ytm:playlist:" + list;
+  };
+
+  // The SAPISIDHASH authorization of a request from `origin` at `seconds`,
+  // from the account's cookies (`sha1` hashes a string to hex).
+  const authorizationOf = async (cookies, seconds, origin, sha1) => {
+    const parts = [];
+    const sign = async (label, value) => value && parts.push(label + " " + seconds + "_" + (await sha1(seconds + " " + value + " " + origin)));
+    await sign("SAPISIDHASH", cookies.SAPISID || cookies["__Secure-3PAPISID"]);
+    await sign("SAPISID1PHASH", cookies["__Secure-1PAPISID"]);
+    await sign("SAPISID3PHASH", cookies["__Secure-3PAPISID"]);
+    return parts.join(" ");
+  };
+  const cookiesOf = (text) => {
+    const out = {};
+    String(text || "")
+      .split(/;\s*/)
+      .forEach((pair) => {
+        const at = pair.indexOf("=");
+        if (at > 0) out[pair.slice(0, at)] = pair.slice(at + 1);
       });
-      return inflight;
-    };
-    const hash = async (op) => {
-      if (ops[op]) return ops[op];
-      const miss = misses.get(op);
-      if (miss && now() < miss.until) throw fail("E_UNKNOWN_QUERY", op);
-      await scan();
-      if (ops[op]) {
-        misses.delete(op);
-        return ops[op];
-      }
-      const count = (miss ? miss.count : 0) + 1;
-      misses.set(op, { count, until: now() + Math.min(maxMs, baseMs * 2 ** (count - 1)) });
-      throw fail("E_UNKNOWN_QUERY", op);
-    };
-    return {
-      hash,
-      scan,
-      learn(op, sha) {
-        ops[op] = sha;
-        misses.delete(op);
-      },
-      forget(op) {
-        delete ops[op];
-      },
-      ops,
-      scanned,
-      misses,
-    };
+    return out;
   };
 
-  // --- Normalizing what the queries answer ----------------------------------
-  // Into the few shapes the app shows (src/ui/types.ts, src/ytmusic/model.rs):
-  // items (playlists, albums, artists, shows) and tracks.
-
-  const pickImage = (sources, prefer = 300) => {
-    if (!sources || !sources.length) return "";
-    const sorted = sources.filter((s) => s && s.url).slice().sort((a, b) => (a.width || 0) - (b.width || 0));
-    return (sorted.find((s) => (s.width || 0) >= prefer) || sorted[sorted.length - 1] || {}).url || "";
-  };
-  const imageOf = (data) => {
-    if (!data) return "";
-    const c = data.coverArt || data.images || data.visuals || data.avatar || (data.albumOfTrack && data.albumOfTrack.coverArt);
-    if (c && c.sources) return pickImage(c.sources);
-    if (c && c.items && c.items[0] && c.items[0].sources) return pickImage(c.items[0].sources);
-    if (c && c.avatarImage && c.avatarImage.sources) return pickImage(c.avatarImage.sources);
-    if (data.visuals && data.visuals.avatarImage && data.visuals.avatarImage.sources) return pickImage(data.visuals.avatarImage.sources);
-    if (data.image && data.image.sources) return pickImage(data.image.sources);
-    return "";
-  };
-  const artistNames = (artists) =>
-    ((artists && artists.items) || [])
-      .map((a) => (a.profile && a.profile.name) || a.name)
-      .filter(Boolean)
-      .join(", ");
-
-  const item = (data) => {
-    if (!data || !data.uri) return null;
-    const kind = kindOf(data.uri);
-    const owner = data.ownerV2 && data.ownerV2.data && data.ownerV2.data.name;
-    let subtitle = "";
-    if (kind === "playlist") subtitle = owner ? "Playlist · " + owner : "Playlist";
-    else if (kind === "album") subtitle = [data.type ? data.type[0] + data.type.slice(1).toLowerCase() : "Album", artistNames(data.artists)].filter(Boolean).join(" · ");
-    else if (kind === "artist") subtitle = "Artist";
-    else if (kind === "show") subtitle = "Podcast · " + ((data.publisher && data.publisher.name) || "");
-    else if (kind === "collection") subtitle = "Playlist";
-    else if (kind === "track") subtitle = artistNames(data.artists);
-    return { uri: data.uri, kind, name: data.name || (data.profile && data.profile.name) || "", subtitle, image: imageOf(data) };
-  };
-
-  const track = (data, uid) => {
-    if (!data || !data.uri || kindOf(data.uri) !== "track") return null;
-    const album = data.albumOfTrack || {};
-    return {
-      uri: data.uri,
-      uid: uid || "",
-      name: data.name || "",
-      artists: artistNames(data.artists || data.firstArtist),
-      album: album.name || "",
-      albumUri: album.uri || "",
-      image: imageOf(data.albumOfTrack || data),
-      durationMs: (data.duration && data.duration.totalMilliseconds) || (data.trackDuration && data.trackDuration.totalMilliseconds) || 0,
-      explicit: !!data.contentRating && data.contentRating.label === "EXPLICIT",
-      playable: data.playability ? data.playability.playable !== false : true,
-    };
-  };
-  const unwrap = (w) => (w && (w.data || (w.item && w.item.data) || (w.itemV2 && w.itemV2.data))) || w;
-
-  // A Liked Songs entry: its URI is on the wrapper (`_uri`), or in its data.
-  const likedTrack = (entry) => {
-    const wrapper = entry && entry.track;
-    const data = unwrap(wrapper) || {};
-    const uidUri = entry && typeof entry.uid === "string" && entry.uid.startsWith("spotify:track:") ? entry.uid : "";
-    const uri = data.uri || (wrapper && wrapper._uri) || (wrapper && wrapper.data && wrapper.data.uri) || uidUri;
-    if (!uri) return null;
-    return track(Object.assign({}, data, { uri }), (wrapper && wrapper._uri) || (entry && entry.uid) || uri);
-  };
-  const likedTracks = (items) => {
-    const tracks = (items || []).map(likedTrack).filter(Boolean);
-    if ((items || []).length && !tracks.length) throw fail("E_SHAPE", "likedSongs.tracks");
-    return tracks;
-  };
-
-  // --- The bridge in a page ---------------------------------------------------
+  // --- The bridge --------------------------------------------------------------
 
   const createBridge = (win, options) => {
     const opts = options || {};
@@ -467,23 +588,10 @@
       } catch (_) {}
     };
 
-    // What outlives a re-injection: the learned headers and hashes, the media
-    // elements seen, the page's fetch.
+    // What outlives a re-injection.
     let shared = win.__ytmfastShared;
     if (!shared || shared.v !== 1) {
-      shared = {
-        v: 1,
-        headers: shared && shared.headers ? shared.headers : null,
-        ops: (shared && shared.ops) || {},
-        vars: (shared && shared.vars) || {},
-        scanned: new Set(),
-        misses: new Map(),
-        media: [],
-        everAd: false,
-        fetch: null,
-        onFetch: null,
-        onPlay: null,
-      };
+      shared = { v: 1, albumLists: {}, artists: {}, asked: null, everAd: false, premium: null, account: null };
       try {
         Object.defineProperty(win, "__ytmfastShared", { value: shared, configurable: true, enumerable: false, writable: true });
       } catch (_) {
@@ -509,112 +617,79 @@
       }
     };
 
-    // --- Learning the player's requests --------------------------------------
+    // --- InnerTube -------------------------------------------------------------
 
-    const KEEP = ["authorization", "client-token", "spotify-app-version", "app-platform", "accept-language"];
-    const headerObject = (headers) => {
-      const out = {};
-      if (!headers) return out;
-      if (typeof headers.forEach === "function" && !Array.isArray(headers)) headers.forEach((v, k) => (out[String(k).toLowerCase()] = v));
-      else if (Array.isArray(headers)) headers.forEach(([k, v]) => (out[String(k).toLowerCase()] = v));
-      else Object.keys(headers).forEach((k) => (out[k.toLowerCase()] = headers[k]));
-      return out;
-    };
-    const hashes = createHashCache({
-      now,
-      ops: shared.ops,
-      scanned: shared.scanned,
-      misses: shared.misses,
-      listUrls: () => {
-        const urls = new Set();
-        try {
-          win.performance.getEntriesByType("resource").forEach((e) => /\.js(\?|$)/.test(e.name) && urls.add(e.name));
-        } catch (_) {}
-        doc.querySelectorAll("script[src]").forEach((s) => urls.add(s.src));
-        return [...urls].filter((u) => {
-          try {
-            return BUNDLE_HOST.test(new URL(u, win.location.href).hostname);
-          } catch (_) {
-            return false;
-          }
-        });
-      },
-      fetchText: async (url) => {
-        const response = await pageFetch.call(win, url);
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.text();
-      },
-    });
-    const learn = (input, init) => {
-      const request = win.Request && input instanceof win.Request ? input : null;
-      const url = request ? request.url : input;
-      if (!String(url).includes("/pathfinder/")) return;
-      const headers = Object.assign(headerObject(request && request.headers), headerObject(init && init.headers));
-      if (!headers.authorization) return;
-      const kept = {};
-      KEEP.forEach((k) => headers[k] && (kept[k] = headers[k]));
-      const changed = !shared.headers || shared.headers.authorization !== kept.authorization;
-      shared.headers = kept;
-      if (changed) post(envelope("auth"));
-      const body = init && typeof init.body === "string" ? JSON.parse(init.body) : null;
-      const hash = body && body.extensions && body.extensions.persistedQuery && body.extensions.persistedQuery.sha256Hash;
-      if (body && body.operationName && hash) {
-        hashes.learn(body.operationName, hash);
-        if (body.variables) shared.vars[body.operationName] = body.variables;
+    const cfg = (key) => {
+      try {
+        const y = win.ytcfg;
+        if (y && typeof y.get === "function") return y.get(key);
+        return y && y.data_ ? y.data_[key] : undefined;
+      } catch (_) {
+        return undefined;
       }
     };
-    // One wrapper of the page's fetch, shared by reinstalls (each swaps its
-    // hook); dispose() restores the page's own when nothing wrapped it since.
-    if (!shared.fetch && typeof win.fetch === "function") {
-      const original = win.fetch;
-      shared.fetch = original;
-      shared.fetchWrapper = function (input, init) {
-        try {
-          if (shared.onFetch) shared.onFetch(input, init);
-        } catch (_) {}
-        return original.apply(this, arguments);
-      };
-      win.fetch = shared.fetchWrapper;
-    }
-    const pageFetch = shared.fetch;
-    shared.onFetch = learn;
-
-    // The player may keep its media element out of the document: remember the
-    // ones that play (read only; it plays as it would).
-    const Media = win.HTMLMediaElement;
-    if (Media && Media.prototype && typeof Media.prototype.play === "function" && !Media.prototype.play.__ytmfast) {
-      const play = Media.prototype.play;
-      const wrapped = function () {
-        try {
-          if (shared.onPlay) shared.onPlay(this);
-        } catch (_) {}
-        return play.apply(this, arguments);
-      };
-      wrapped.__ytmfast = true;
-      shared.play = play;
-      shared.playWrapper = wrapped;
-      Media.prototype.play = wrapped;
-    }
-    shared.onPlay = (element) => {
-      shared.media = [element].concat(shared.media.filter((m) => m !== element)).slice(0, 4);
+    const cookies = () => cookiesOf(doc.cookie);
+    const signedIn = () => {
+      const c = cookies();
+      return !!(c.SAPISID || c["__Secure-3PAPISID"]);
     };
-    // The progress bar's time now (see `barTime`).
-    const currentBar = () => {
-      const range = inBar(SEL.progress);
-      return barTime(
-        inBar(SEL.position) && inBar(SEL.position).textContent,
-        inBar(SEL.duration) && inBar(SEL.duration).textContent,
-        range && Number(range.max) > 0 ? { value: Number(range.value), max: Number(range.max) } : null,
-      );
-    };
-    const allMedia = () => shared.media.concat([...doc.querySelectorAll("video, audio")]);
-    // The media element of what plays: the one whose length is the bar's
-    // (others may be the next track warming up, or an old one).
-    const media = () => pickMedia(allMedia(), currentBar());
+    const sha1 =
+      opts.sha1 ||
+      (async (value) => {
+        const bytes = new win.TextEncoder().encode(value);
+        const digest = await win.crypto.subtle.digest("SHA-1", bytes);
+        return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+      });
 
-    // A GraphQL query of the player's, with its headers.
-    // Samples a cover (Spotify's image hosts allow it) at 24 × 24 into a
-    // palette, within a few seconds.
+    const innertube = async (endpoint, body) => {
+      const context = cfg("INNERTUBE_CONTEXT");
+      if (!context) throw fail("E_NOT_READY", "the page has no API config yet");
+      const headers = {
+        "content-type": "application/json",
+        "x-origin": ORIGIN,
+        "x-goog-authuser": String(cfg("SESSION_INDEX") || 0),
+        "x-youtube-client-name": String(cfg("INNERTUBE_CONTEXT_CLIENT_NAME") || 67),
+        "x-youtube-client-version": String(cfg("INNERTUBE_CONTEXT_CLIENT_VERSION") || (context.client && context.client.clientVersion) || ""),
+      };
+      const visitor = cfg("VISITOR_DATA");
+      if (visitor) headers["x-goog-visitor-id"] = visitor;
+      const authorization = await authorizationOf(cookies(), Math.floor(now() / 1000), ORIGIN, sha1);
+      if (authorization) headers.authorization = authorization;
+      const key = cfg("INNERTUBE_API_KEY");
+      const url = "/youtubei/v1/" + endpoint + "?prettyPrint=false" + (key ? "&key=" + encodeURIComponent(key) : "");
+      let response;
+      try {
+        response = await win.fetch(url, { method: "POST", headers, credentials: "include", body: JSON.stringify(Object.assign({ context }, body)) });
+      } catch (error) {
+        throw fail("E_NETWORK", endpoint + ": " + ((error && error.message) || error));
+      }
+      if (response.status === 401 || response.status === 403) throw fail(signedIn() ? "E_NO_AUTH" : "E_SIGNED_OUT", endpoint + ": HTTP " + response.status);
+      if (response.status === 404) throw fail("E_NOT_FOUND", endpoint + ": HTTP 404");
+      if (!response.ok) throw fail("E_HTTP", endpoint + ": HTTP " + response.status);
+      const json = await response.json();
+      if (json && json.error) throw fail("E_HTTP", endpoint + ": " + (json.error.message || json.error.code));
+      return json;
+    };
+    const browse = (body) => innertube("browse", body);
+    const needSignIn = (what) => {
+      if (!signedIn()) throw fail("E_SIGNED_OUT", what + " needs a signed-in account");
+    };
+
+    // Up to `max` tracks of a list, following its continuations.
+    const allTracks = async (first, max, fallback) => {
+      const tracks = first.collection.tracks.slice();
+      let token = first.continuation;
+      for (let page = 0; token && tracks.length < max && page < 20; page++) {
+        const json = await browse({ continuation: token });
+        const more = continuedTracks(json, tracks.length, fallback);
+        if (!more.tracks.length) break;
+        tracks.push(...more.tracks);
+        token = more.continuation;
+      }
+      return tracks;
+    };
+
+    // Samples a cover at 24 × 24 into a palette, within a few seconds.
     const samplePalette = (url) =>
       new Promise((resolve, reject) => {
         const img = new win.Image();
@@ -640,389 +715,214 @@
         img.src = url;
       });
 
-    const gql = async (op, variables) => {
-      if (!shared.headers) await waitFor(() => shared.headers, 20000);
-      if (!shared.headers) throw fail("E_NO_AUTH", "the web player has not signed its requests yet");
-      const hash = await hashes.hash(op);
-      let response;
-      try {
-        response = await pageFetch.call(win, "https://api-partner.spotify.com/pathfinder/v2/query", {
-          method: "POST",
-          headers: Object.assign({ "content-type": "application/json;charset=UTF-8", accept: "application/json" }, shared.headers),
-          body: JSON.stringify({
-            // What the player sends, with what the app asks for over it.
-            variables: Object.assign({}, shared.vars[op] || {}, variables),
-            operationName: op,
-            extensions: { persistedQuery: { version: 1, sha256Hash: hash } },
-          }),
-        });
-      } catch (error) {
-        throw fail("E_NETWORK", op + ": " + ((error && error.message) || error));
-      }
-      if (response.status === 401) throw fail("E_NO_AUTH", op + ": HTTP 401");
-      if (!response.ok) throw fail("E_HTTP", op + ": HTTP " + response.status);
-      const json = await response.json();
-      const errors = (json && json.errors) || [];
-      if (errors.some((e) => /PersistedQueryNotFound/i.test((e && e.message) || ""))) {
-        hashes.forget(op);
-        throw fail("E_UNKNOWN_QUERY", op + " (stale hash)");
-      }
-      if (errors.length && !json.data) throw fail("E_GRAPHQL", op + ": " + errors.map((e) => e.message).join("; "));
-      if (!json || !json.data) {
-        warn("[spotish] unexpected shape of " + op + ": no data");
-        throw fail("E_SHAPE", op + ".data");
-      }
-      return json.data;
-    };
-
     const api = {
-      async library() {
-        const op = "libraryV3";
-        const data = await gql(op, {
-          filters: [],
-          order: null,
-          textFilter: "",
-          features: ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
-          limit: 200,
-          offset: 0,
-          flatten: false,
-          expandedFolders: [],
-          folderUri: null,
-          includeFoldersWhenFlattening: true,
-        });
-        const items = need(op, data, "me.libraryV3.items", warn)
-          .map((entry) => {
-            const d = entry && entry.item && entry.item.data;
-            if (!d) return null;
-            if (d.__typename === "PseudoPlaylist") {
-              likedImage = imageOf(d) || likedImage;
-              return { uri: d.uri || "spotify:collection:tracks", kind: "collection", name: d.name || "Liked Songs", subtitle: (d.count || 0) + " songs", image: imageOf(d) || LIKED_IMAGE };
-            }
-            return item(d);
-          })
-          .filter(Boolean);
-        return { items };
-      },
-
-      async me() {
-        const op = "profileAttributes";
-        const data = await gql(op, {});
-        const p = need(op, data, "me.profile", warn);
-        const id = p.username || (kindOf(p.uri) === "user" ? idOf(p.uri) : "") || "";
-        if (!id) {
-          warn("[spotish] unexpected shape of " + op + ": no user id");
-          throw fail("E_SHAPE", op + ".me.profile.username");
-        }
-        return { id, name: p.name || p.username || "", username: p.username || id, image: pickImage(p.avatar && p.avatar.sources, 64) };
-      },
-
       async home() {
-        const op = "home";
-        const cookie = (name) => (String(doc.cookie || "").match(new RegExp("(?:^|; )" + name + "=([^;]*)")) || [])[1] || "";
-        const data = await gql(op, {
-          includeHomeChapterVideoCards: false,
-          homeEndUserIntegration: "INTEGRATION_WEB_PLAYER",
-          includeEpisodeContentRatingsV2: false,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          sp_t: cookie("sp_t"),
-          facet: "",
-          sectionItemsLimit: 12,
-        });
-        const sections = need(op, data, "home.sectionContainer.sections.items", warn)
-          .map((s) => ({
-            title: (s.data && s.data.title && (s.data.title.transformedLabel || s.data.title.text)) || "",
-            items: ((s.sectionItems && s.sectionItems.items) || []).map((i) => item(unwrap(i.content))).filter(Boolean),
-          }))
-          .filter((s) => s.title && s.items.length);
-        return { greeting: (data.home.greeting && data.home.greeting.transformedLabel) || "", sections };
+        const first = await browse({ browseId: "FEmusic_home" });
+        const home = homeOf(first, new Date(now()).getHours());
+        // One more page of sections, when there is one.
+        const token = continuationOf(dig(first, "contents.singleColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer") || {});
+        if (token) {
+          try {
+            home.sections = home.sections.concat(sectionsOf(await browse({ continuation: token })));
+          } catch (error) {
+            warn("[ytmfast] home continuation:", messageOf(error));
+          }
+        }
+        return home;
       },
 
       async search(term) {
-        const op = "searchDesktop";
-        const data = await gql(op, {
-          searchTerm: String(term || ""),
-          offset: 0,
-          limit: 10,
-          numberOfTopResults: 5,
-          includeAudiobooks: false,
-          includeArtistHasConcertsField: false,
-          includePreReleases: true,
-          includeAlbumPreReleases: false,
-          includeLocalConcertsField: false,
-          includeAuthors: false,
-          includeEpisodeContentRatingsV2: false,
-        });
-        const s = need(op, data, "searchV2", warn);
-        const items = (list) => ((list && list.items) || []).map((i) => item(unwrap(i))).filter(Boolean);
-        return {
-          tracks: ((s.tracksV2 && s.tracksV2.items) || []).map((i) => track(unwrap(i.item || i))).filter(Boolean),
-          artists: items(s.artists),
-          albums: items(s.albumsV2),
-          playlists: items(s.playlists),
-        };
+        const query = String(term || "").trim();
+        if (!query) return { tracks: [], artists: [], albums: [], playlists: [] };
+        return searchOf(await innertube("search", { query }));
       },
 
-      async playlist(uri, offset = 0) {
-        const op = "fetchPlaylist";
-        const data = await gql(op, { uri, offset, limit: 100, enableWatchFeedEntrypoint: false });
-        missingEntity(op, data.playlistV2, uri);
-        const p = need(op, data, "playlistV2", warn);
-        const entries = need(op, data, "playlistV2.content.items", warn);
-        const tracks = entries.map((i) => track(unwrap(i.itemV2), i.uid)).filter(Boolean);
-        const owner = (p.ownerV2 && p.ownerV2.data && p.ownerV2.data.name) || "";
-        return {
-          header: { uri, kind: "playlist", name: p.name || "", subtitle: owner + (p.content.totalCount ? " · " + p.content.totalCount + " songs" : ""), image: imageOf(p), description: (p.description || "").replace(/<[^>]+>/g, "") },
-          tracks,
-          releases: [],
-          total: p.content.totalCount || tracks.length,
-        };
+      async playlist(uri) {
+        const { id } = parseUri(uri);
+        const first = collectionOf(await browse({ browseId: "VL" + id }), uri, "playlist");
+        first.collection.tracks = await allTracks(first, 1000);
+        return first.collection;
+      },
+
+      async likedSongs() {
+        needSignIn("Liked Music");
+        const first = collectionOf(await browse({ browseId: "VL" + LIKED_ID }), LIKED_URI, "collection");
+        first.collection.header.name = first.collection.header.name || "Liked Music";
+        first.collection.tracks = await allTracks(first, 2000);
+        first.collection.total = Math.max(first.collection.total, first.collection.tracks.length);
+        return first.collection;
       },
 
       async album(uri) {
-        const op = "getAlbum";
-        const data = await gql(op, { uri, locale: "", offset: 0, limit: 50 });
-        missingEntity(op, data.albumUnion, uri);
-        const a = need(op, data, "albumUnion", warn);
-        const list = (a.tracksV2 && a.tracksV2.items) || (a.tracks && a.tracks.items);
-        if (!list) {
-          warn("[spotish] unexpected shape of " + op + ": missing albumUnion.tracksV2.items");
-          throw fail("E_SHAPE", op + ".albumUnion.tracksV2.items");
-        }
-        const image = imageOf(a);
-        const tracks = list
-          .map((i) => {
-            const t = track(i.track, i.uid);
-            if (t) {
-              t.album = a.name || "";
-              t.albumUri = uri;
-              t.image = t.image || image;
-            }
-            return t;
-          })
-          .filter(Boolean);
-        const year = a.date && a.date.isoString ? a.date.isoString.slice(0, 4) : (a.date && a.date.year) || "";
-        return {
-          header: { uri, kind: "album", name: a.name || "", subtitle: [artistNames(a.artists), year, tracks.length + " songs"].filter(Boolean).join(" · "), image, description: "" },
-          tracks,
-          releases: [],
-          total: (a.tracksV2 && a.tracksV2.totalCount) || tracks.length,
-        };
+        const { id } = parseUri(uri);
+        const first = collectionOf(await browse({ browseId: id }), uri, "album");
+        if (first.playlistId) shared.albumLists[id] = first.playlistId;
+        return first.collection;
       },
 
       async artist(uri) {
-        const op = "queryArtistOverview";
-        const data = await gql(op, { uri, locale: "", includePrerelease: true });
-        missingEntity(op, data.artistUnion, uri);
-        const a = need(op, data, "artistUnion", warn);
-        need(op, data, "artistUnion.profile", warn);
-        const d = a.discography || {};
-        const tracks = ((d.topTracks && d.topTracks.items) || []).map((i) => track(i.track, i.uid)).filter(Boolean);
-        const releases = ((d.popularReleasesAlbums && d.popularReleasesAlbums.items) || (d.albums && d.albums.items) || [])
-          .map((r) => item((r.releases && r.releases.items && r.releases.items[0]) || r))
-          .filter(Boolean);
-        const listeners = a.stats && a.stats.monthlyListeners ? a.stats.monthlyListeners.toLocaleString() + " monthly listeners" : "";
-        return {
-          header: { uri, kind: "artist", name: a.profile.name || "", subtitle: listeners, image: imageOf(a.visuals) || pickImage(a.visuals && a.visuals.avatarImage && a.visuals.avatarImage.sources), description: "" },
-          tracks,
-          releases,
-          total: tracks.length,
-        };
+        const { id } = parseUri(uri);
+        const page = artistOf(await browse({ browseId: id }), uri);
+        shared.artists[id] = { songs: page.songsPlaylistId, play: page.play };
+        return page.collection;
       },
 
-      async likedSongs(offset = 0) {
-        const op = "fetchLibraryTracks";
-        const data = await gql(op, { offset, limit: 100 });
-        const t = need(op, data, "me.library.tracks", warn);
-        const tracks = likedTracks(need(op, data, "me.library.tracks.items", warn));
-        return {
-          header: { uri: "spotify:collection:tracks", kind: "collection", name: "Liked Songs", subtitle: (t.totalCount || tracks.length) + " songs", image: likedImage || LIKED_IMAGE, description: "" },
-          tracks,
-          releases: [],
-          total: t.totalCount || tracks.length,
-        };
-      },
-
-      // A cover's colours, for the shaders: Spotify's extracted colour
-      // (`hex`, its dark tone) and the cover's own palette (`palette`, up to
-      // five, most telling first) sampled from the image. Best effort: empty
-      // when unknown.
-      async colors(imageUrl) {
-        if (!imageUrl) return { hex: "", palette: [] };
-        const [hex, palette] = await Promise.all([
-          gql("fetchExtractedColors", { imageUris: [imageUrl] })
-            .then((data) => {
-              const c = data.extractedColors && data.extractedColors[0];
-              return (c && ((c.colorDark && c.colorDark.hex) || (c.colorRaw && c.colorRaw.hex))) || "";
-            })
-            .catch((error) => {
-              warn("[spotish] colors:", messageOf(error));
-              return "";
+      async library() {
+        needSignIn("the library");
+        const answers = await Promise.all(
+          ["FEmusic_liked_playlists", "FEmusic_liked_albums", "FEmusic_library_corpus_artists"].map((browseId) =>
+            browse({ browseId }).catch((error) => {
+              warn("[ytmfast] library " + browseId + ":", messageOf(error));
+              return null;
             }),
-          samplePalette(imageUrl).catch((error) => {
-            warn("[spotish] palette:", messageOf(error));
-            return [];
-          }),
-        ]);
-        return { hex, palette: palette.length ? palette : hex ? [hex] : [] };
+          ),
+        );
+        return libraryOf(answers.filter(Boolean));
       },
 
-      // A track's lyrics (see `lyricsOf`), as the web player's lyrics view
-      // loads them; none (no lines) when Spotify has none for it.
+      async me() {
+        needSignIn("the account");
+        const json = await innertube("account/account_menu", {});
+        // A free account's menu offers Premium; a Premium one does not.
+        const offersPremium = /music_premium|musicpremium/i.test(JSON.stringify(json));
+        if (!shared.everAd) shared.premium = offersPremium ? false : null;
+        return meOf(json, cfg("DATASYNC_ID"));
+      },
+
+      async colors(imageUrl) {
+        const palette = await samplePalette(String(imageUrl || "")).catch((error) => {
+          warn("[ytmfast] palette:", messageOf(error));
+          return [];
+        });
+        return { hex: palette[0] || "", palette };
+      },
+
       async lyrics(trackUri) {
-        const id = idOf(trackUri);
-        if (kindOf(trackUri) !== "track" || !id) return lyricsOf(null);
-        if (!shared.headers) await waitFor(() => shared.headers, 20000);
-        if (!shared.headers) throw fail("E_NO_AUTH", "the web player has not signed its requests yet");
-        let response;
-        try {
-          response = await pageFetch.call(win, "https://spclient.wg.spotify.com/color-lyrics/v2/track/" + id + "?format=json&vocalRemoval=false&market=from_token", {
-            headers: Object.assign({ accept: "application/json" }, shared.headers, { "app-platform": shared.headers["app-platform"] || "WebPlayer" }),
-          });
-        } catch (error) {
-          throw fail("E_NETWORK", "lyrics: " + ((error && error.message) || error));
-        }
-        if (response.status === 404 || response.status === 204) return lyricsOf(null);
-        if (response.status === 401) throw fail("E_NO_AUTH", "lyrics: HTTP 401");
-        if (!response.ok) throw fail("E_HTTP", "lyrics: HTTP " + response.status);
-        return lyricsOf(await response.json());
+        const { kind, id } = parseUri(trackUri);
+        if (kind !== "track") return lyricsOf(null);
+        const browseId = lyricsBrowseIdOf(await innertube("next", { videoId: id, isAudioOnly: true }));
+        if (!browseId) return lyricsOf(null);
+        return lyricsOf(await browse({ browseId }));
       },
     };
 
-    // --- The player: its state -----------------------------------------------
+    // --- The player: its state ---------------------------------------------------
 
     const q = (selector, scope) => (scope || doc).querySelector(selector);
     const bar = () => q(SEL.bar);
     const inBar = (selector) => q(selector, bar() || doc);
-
-    let premiumWidgetSince = 0;
-    const premiumNow = (ad) => {
-      if (ad) shared.everAd = true; // Premium hears no ads
-      if (shared.everAd) return false;
-      if (q(SEL.login)) return null;
-      const top = q(SEL.topBar);
-      if (!top) return null;
-      if (q(SEL.upgrade, top)) return false;
-      if (!q(SEL.userWidget, top)) {
-        premiumWidgetSince = 0;
-        return null;
+    const player = () => q(SEL.player);
+    const call = (name, ...args) => {
+      const p = player();
+      try {
+        return p && typeof p[name] === "function" ? p[name](...args) : undefined;
+      } catch (error) {
+        warn("[ytmfast] player." + name + ":", messageOf(error));
+        return undefined;
       }
-      // Signed in with no upgrade button: Premium, once that holds a while.
-      if (!premiumWidgetSince) premiumWidgetSince = now();
-      return now() - premiumWidgetSince >= 5000 ? true : null;
     };
-
-    const adNow = (meta, title) => {
-      const next = inBar(SEL.next);
-      const progress = inBar(SEL.progress);
-      return adFrom({
-        marker: inBar(SEL.adMarker),
-        metaTitle: meta && meta.title,
-        hasTrack: !!title,
-        nextDisabled: !!next && isDisabled(next),
-        progressDisabled: !progress || isDisabled(progress),
-      });
+    const video = () => q(SEL.video, player() || doc);
+    const adNow = () => {
+      const p = player();
+      const ad = hasClass(p, "ad-showing") || hasClass(p, "ad-interrupting");
+      if (ad) shared.everAd = true;
+      return ad;
     };
-
-    const readRepeat = (el) => {
-      const label = (el && el.getAttribute("aria-label")) || "";
-      const checked = el && el.getAttribute("aria-checked");
-      return checked === "mixed" || /disable repeat/i.test(label) ? "track" : checked === "true" ? "context" : "off";
+    const listNow = () => {
+      try {
+        const list = new URL(win.location.href).searchParams.get("list");
+        if (list) return list;
+      } catch (_) {}
+      return call("getPlaylistId") || "";
     };
-    const readMuted = () => {
-      const mute = inBar(SEL.mute);
-      return !!mute && /unmute/i.test(mute.getAttribute("aria-label") || "");
-    };
-    const readVolume = () => {
-      const input = inBar(SEL.volume);
-      if (!input) return 1;
-      const { min, max } = rangeOf(input);
-      return max > min ? Math.round(((Number(input.value) - min) / (max - min)) * 100) / 100 : 1;
-    };
-    const readLiked = () => {
-      const like = inBar(SEL.like);
-      return !!like && like.getAttribute("aria-checked") === "true";
-    };
-    // The picker's Liked Songs item, while the picker is open.
-    const likedChoice = () => {
-      const label = q(SEL.likedChoice);
-      return label ? label.closest('[role="menuitemcheckbox"]') : null;
-    };
-    // The picker's Done button: the nearest one around its Liked Songs item.
-    const pickerDone = (choice) => {
-      for (let el = choice.parentNode; el && el.querySelectorAll; el = el.parentNode) {
-        for (const b of el.querySelectorAll("button")) if (/^\s*done\s*$/i.test(b.textContent || "")) return b;
-      }
-      return null;
-    };
-    const readShuffle = () => {
-      const el = inBar(SEL.shuffle);
-      return !!el && el.getAttribute("aria-checked") === "true";
+    const videoIdNow = () => {
+      const data = call("getVideoData");
+      return (data && data.video_id) || "";
     };
     const readPlaying = () => {
-      const m = media();
-      if (m) return !m.paused;
-      const button = inBar(SEL.playPause);
-      return /pause/i.test((button && button.getAttribute("aria-label")) || "");
+      const v = video();
+      if (v && typeof v.paused === "boolean") return !v.paused;
+      const state = call("getPlayerState");
+      return state === 1 || state === 3;
+    };
+    const readRepeat = () => repeatOf(bar() && bar().getAttribute("repeat-mode"));
+    const readLiked = () => {
+      const like = inBar(SEL.like);
+      return !!like && like.getAttribute("like-status") === "LIKE";
+    };
+    const readVolume = () => {
+      const v = Number(call("getVolume"));
+      return isFinite(v) ? Math.round(v) / 100 : 1;
     };
 
     const playerState = () => {
       const meta = win.navigator && win.navigator.mediaSession && win.navigator.mediaSession.metadata;
-      const playPause = inBar(SEL.playPause);
+      const data = call("getVideoData") || {};
+      const ad = adNow();
+      const v = video();
+      const title = (meta && meta.title) || data.title || text(inBar(SEL.barTitle) && inBar(SEL.barTitle).textContent) || "";
+      const artwork = meta && meta.artwork && meta.artwork.length ? meta.artwork[meta.artwork.length - 1].src : (inBar(SEL.barImage) && inBar(SEL.barImage).src) || "";
+      const position = v && isFinite(v.currentTime) ? v.currentTime : Number(call("getCurrentTime")) || 0;
+      const duration = v && isFinite(v.duration) && v.duration > 0 ? v.duration : Number(call("getDuration")) || 0;
       const shuffle = inBar(SEL.shuffle);
-      const titleLink = inBar(SEL.title);
-      const contextLink = inBar(SEL.context);
       const next = inBar(SEL.next);
       const previous = inBar(SEL.previous);
-      const title = (meta && meta.title) || (titleLink && titleLink.textContent) || "";
-      const trackId = trackIdFromHref(titleLink && titleLink.getAttribute("href"));
-      const ad = adNow(meta, title);
-      // The bar's numbers, checked against the media elements, which are
-      // finer but not all the one playing.
-      const time = timeOf(allMedia(), currentBar()) || { positionMs: 0, durationMs: 0 };
-      const positionMs = time.positionMs;
-      const durationMs = time.durationMs;
       return {
         title,
-        artist: (meta && meta.artist) || "",
+        artist: (meta && meta.artist) || data.author || "",
         album: (meta && meta.album) || "",
-        artwork: meta && meta.artwork && meta.artwork.length ? meta.artwork[meta.artwork.length - 1].src : "",
-        trackUri: trackId ? "spotify:track:" + trackId : "",
-        contextHref: contextLink ? contextLink.getAttribute("href") || "" : "",
+        artwork: String(artwork || "").replace(/=w\d+-h\d+/, "=w544-h544"),
+        trackUri: data.video_id && title ? "ytm:track:" + data.video_id : "",
+        contextHref: contextOf(listNow(), shared.asked),
         playing: readPlaying(),
-        canPlay: !!playPause && !isDisabled(playPause),
-        positionMs,
-        durationMs,
+        canPlay: !!player(),
+        positionMs: Math.round(position * 1000),
+        durationMs: Math.round(duration * 1000),
         at: now(),
-        shuffle: readShuffle(),
-        shuffleAvailable: !!shuffle && !isDisabled(shuffle),
-        repeat: readRepeat(inBar(SEL.repeat)),
+        shuffle: false, // YouTube Music's shuffle reorders the queue once; it is no mode
+        shuffleAvailable: !!shuffle && !isDisabled(shuffle) && !ad,
+        repeat: readRepeat(),
         volume: readVolume(),
-        muted: readMuted(),
+        muted: !!call("isMuted"),
         liked: readLiked(),
-        canNext: !!next && !isDisabled(next) && !ad,
-        canPrevious: !!previous && !isDisabled(previous) && !ad,
+        canNext: !ad && (!next || !isDisabled(next)),
+        canPrevious: !ad && (!previous || !isDisabled(previous)),
         ad,
-        premium: premiumNow(ad),
+        premium: shared.everAd ? false : shared.premium,
       };
+    };
+
+    // Answers "Continue watching?": the listener is using the app.
+    const stillHere = () => {
+      const prompt = q(SEL.youThere);
+      if (!prompt || prompt.getAttribute("hidden") != null) return;
+      const button = q(SEL.youThereButton, prompt);
+      if (button) button.click();
     };
 
     let lastPosted = null;
     let readyPosted = false;
+    let lastAccount = null;
     const tick = () => {
       if (!alive) return;
       try {
         if (!readyPosted) {
-          if (!bar() || !shared.headers) return;
+          if (!bar() || !cfg("INNERTUBE_CONTEXT")) return;
           readyPosted = true;
           post(envelope("ready"));
         }
+        const c = cookies();
+        const account = c.SAPISID || c["__Secure-3PAPISID"] || "";
+        if (lastAccount !== null && account !== lastAccount) post(envelope("auth"));
+        lastAccount = account;
+        stillHere();
         const s = playerState();
         if (shouldPost(lastPosted, s, s.at)) {
           lastPosted = s;
           post(envelope("state", { state: s }));
         }
       } catch (error) {
-        warn("[spotish] state:", messageOf(error));
+        warn("[ytmfast] state:", messageOf(error));
       }
     };
     const soon = (ms) => {
@@ -1031,220 +931,171 @@
       if (timers.timeouts.length > 32) timers.timeouts.shift();
     };
 
-    // --- The player: its controls --------------------------------------------
+    // --- The player: its controls ------------------------------------------------
 
-    const press = (name, selector) => {
-      usable(name, inBar(selector)).click();
-    };
     const refuseDuringAd = (what) => {
-      const meta = win.navigator && win.navigator.mediaSession && win.navigator.mediaSession.metadata;
-      const titleLink = inBar(SEL.title);
-      if (adNow(meta, (meta && meta.title) || (titleLink && titleLink.textContent) || "")) throw fail("E_AD", what + " is not available while an ad plays");
+      if (adNow()) throw fail("E_AD", what + " waits for the ad to end");
     };
-    const settleOpts = (name, read, target, selector, tries) => ({ name, read, target, tries, press: () => press(name, selector), sleep, now });
+    const press = (name, selector) => usable(name, inBar(selector)).click();
 
-    // React keeps a range's value itself: set it through the native setter so
-    // the input event carries the new value.
-    const writeRange = (input, value) => {
-      const proto = win.HTMLInputElement && win.HTMLInputElement.prototype;
-      const descriptor = proto && Object.getOwnPropertyDescriptor(proto, "value");
-      if (descriptor && descriptor.set) descriptor.set.call(input, String(value));
-      else input.value = String(value);
-      const fire = (Type, type) => {
-        try {
-          input.dispatchEvent(new Type(type, { bubbles: true }));
-        } catch (_) {
-          input.dispatchEvent(new win.Event(type, { bubbles: true }));
-        }
-      };
-      fire(win.Event, "input");
-      fire(win.Event, "change");
-      fire(win.PointerEvent || win.MouseEvent || win.Event, "pointerup");
-      fire(win.MouseEvent || win.Event, "mouseup");
-    };
-    // Writes `value` to the range `name`, and answers once the page shows it.
-    const setRange = async (name, selector, value, confirm) => {
-      const input = usable(name, inBar(selector));
-      const { min, max, step } = rangeOf(input);
-      const target = quantize(value, min, max, step);
-      const tolerance = Math.max(step / 2, 1e-6);
-      const shows = confirm || (() => Math.abs(Number(inBar(selector) ? inBar(selector).value : NaN) - target) <= tolerance);
-      for (let attempt = 0; attempt < 2; attempt++) {
-        writeRange(inBar(selector) || input, target);
-        if (await waitFor(shows, 1200, 50)) return target;
+    // Plays `target` ({ videoId, playlistId, params }) through the page's own
+    // navigation, as a click on a song would; a full load of the watch page
+    // when the page does not take it.
+    const watch = async (target) => {
+      const before = { video: videoIdNow(), list: listNow() };
+      const { url, endpoint } = watchOf(target);
+      const app = q(SEL.app);
+      let moved = false;
+      if (app && typeof app.dispatchEvent === "function") {
+        const Custom = win.CustomEvent || win.Event;
+        app.dispatchEvent(new Custom("yt-navigate", { bubbles: true, composed: true, detail: { endpoint } }));
+        moved = !!(await waitFor(() => {
+          const video = videoIdNow();
+          if (target.videoId) return video === target.videoId;
+          return (video && video !== before.video) || (listNow() === target.playlistId && before.list !== target.playlistId);
+        }, 6000, 100));
       }
-      throw fail("E_TIMEOUT", "control " + name + " did not take " + target);
+      if (!moved) {
+        // The page reloads, and the bridge with it; answer first.
+        const id = win.setTimeout(() => win.location.assign(url), 0);
+        timers.timeouts.push(id);
+        return { confirmed: false };
+      }
+      if (!readPlaying()) call("playVideo");
+      return { confirmed: !!(await waitFor(() => readPlaying() || adNow(), 4000, 100)) };
     };
 
-    const sameContext = (path) => {
-      const href = playerState().contextHref.split(/[?#]/)[0];
-      return !!href && (href === path || (path === "/collection/tracks" && href.startsWith("/collection")));
-    };
-
-    // Opens `uri`'s page and waits for proof that it (not the previous page)
-    // rendered: the page's own `data-test-uri`, or a new action bar.
-    // The play button of the page at `path`.
-    const pagePlay = (path) => q(path.startsWith("/show/") ? SEL.showPlay : SEL.actionPlay);
-    const openPage = async (uri) => {
-      const path = pathOf(uri);
-      const loc = win.location;
-      const stale = loc.pathname === path ? null : pagePlay(path);
-      if (loc.pathname !== path) {
-        win.history.pushState({}, "", path);
-        win.dispatchEvent(new win.PopStateEvent("popstate", { state: {} }));
+    // What `uri` plays: its queue's playlist, and how to start it.
+    const playTarget = async (uri) => {
+      const { kind, id } = parseUri(uri);
+      if (kind === "playlist" || kind === "mix") return { playlistId: id };
+      if (kind === "collection") return { playlistId: LIKED_ID };
+      if (kind === "album") {
+        if (!shared.albumLists[id]) await api.album(uri);
+        const playlistId = shared.albumLists[id];
+        if (!playlistId) throw fail("E_NOT_FOUND", "no playlist for " + uri);
+        return { playlistId };
       }
-      const proven = await waitFor(() => {
-        if (win.location.pathname !== path) return false;
-        if (/^[A-Za-z0-9:._-]+$/.test(uri) && q('[data-test-uri="' + uri + '"]')) return true;
-        if (path === "/collection/tracks" && q('[data-test-uri$=":collection"], [data-test-uri="spotify:collection:tracks"]')) return true;
-        const button = pagePlay(path);
-        return !!button && button !== stale && button.isConnected !== false;
-      }, 15000);
-      if (!proven) throw fail("E_TIMEOUT", "the page of " + uri + " did not render");
-      return path;
-    };
-
-    const scroller = () => {
-      const list = q(SEL.scroller[0]);
-      const viewport = list && list.closest && list.closest("[data-overlayscrollbars-viewport], .main-view-container__scroll-node");
-      return viewport || q(SEL.scroller[1]) || q(SEL.scroller[2]);
-    };
-    const rowFor = (id) => {
-      for (const link of doc.querySelectorAll(SEL.row + ' a[href*="/track/' + id + '"]')) {
-        if (trackIdFromHref(link.getAttribute("href")) === id) return link.closest(SEL.row);
+      if (kind === "artist") {
+        if (!shared.artists[id]) await api.artist(uri);
+        const artist = shared.artists[id] || {};
+        if (artist.songs) return { playlistId: artist.songs };
+        if (artist.play) return { playlistId: artist.play.playlistId, params: artist.play.params };
+        throw fail("E_NOT_FOUND", "nothing to play for " + uri);
       }
-      return null;
+      throw fail("E_BAD_ARGS", "cannot play " + uri);
     };
-    // Rows are virtualized: scroll from the top until the track's row exists.
-    const findRow = async (trackUri) => {
-      const id = idOf(trackUri);
-      if (kindOf(trackUri) !== "track" || !/^[A-Za-z0-9]+$/.test(id)) throw fail("E_BAD_ARGS", "not a track: " + trackUri);
-      await waitFor(() => q(SEL.row), 15000);
-      let row = rowFor(id);
-      const view = scroller();
-      if (row || !view) return row;
-      view.scrollTop = 0;
-      for (let i = 0; !row && i < 400; i++) {
-        await sleep(120);
-        row = rowFor(id);
-        if (row) break;
-        const before = view.scrollTop;
-        view.scrollTop = before + Math.max(200, (view.clientHeight || 600) * 0.8);
-        if (view.scrollTop === before) {
-          await sleep(200);
-          row = rowFor(id);
-          break; // the bottom
-        }
-      }
-      return row;
-    };
-    const confirmTrack = async (trackUri) => !!(await waitFor(() => playerState().trackUri === trackUri || playerState().ad, 6000, 150));
 
     const controls = {
       toggle: async () => {
-        press("playpause", SEL.playPause);
+        if (readPlaying()) call("pauseVideo");
+        else call("playVideo");
         return null;
       },
-      play: () => settle(settleOpts("playing", readPlaying, true, SEL.playPause, 2)),
-      pause: () => settle(settleOpts("playing", readPlaying, false, SEL.playPause, 2)),
+      play: async () => {
+        call("playVideo");
+        if (!(await waitFor(() => readPlaying(), 3000, 50))) throw fail("E_TIMEOUT", "did not start playing");
+        return true;
+      },
+      pause: async () => {
+        call("pauseVideo");
+        if (!(await waitFor(() => !readPlaying(), 3000, 50))) throw fail("E_TIMEOUT", "did not pause");
+        return false;
+      },
       next: async () => {
         refuseDuringAd("next");
-        press("next", SEL.next);
+        if (inBar(SEL.next)) press("next", SEL.next);
+        else call("nextVideo");
         return null;
       },
       previous: async () => {
         refuseDuringAd("previous");
-        press("previous", SEL.previous);
+        if (inBar(SEL.previous)) press("previous", SEL.previous);
+        else call("previousVideo");
         return null;
       },
       seek: async (ms) => {
         const target = Number(ms);
         if (!isFinite(target) || target < 0) throw fail("E_BAD_ARGS", "seek to " + ms);
         refuseDuringAd("seek");
-        const input = usable("seek", inBar(SEL.progress));
-        const state = playerState();
-        // The input's unit: milliseconds, seconds, or a fraction of the track.
-        const max = rangeOf(input).max;
-        const scale = state.durationMs > 0 && Math.abs(max - state.durationMs) / state.durationMs > 0.02 ? max / state.durationMs : 1;
-        const wanted = Math.min(target, state.durationMs || target);
-        const confirm = () => Math.abs(playerState().positionMs - wanted) <= 2000;
-        await setRange("seek", SEL.progress, wanted * scale, confirm);
+        if (!player()) throw fail("E_NOT_FOUND", "control seek");
+        call("seekTo", target / 1000, true);
+        await waitFor(() => Math.abs(playerState().positionMs - target) <= 2000, 2000, 50);
         const after = playerState();
         return { positionMs: after.positionMs, at: after.at };
       },
       setVolume: async (v) => {
         const level = Number(v);
         if (!isFinite(level)) throw fail("E_BAD_ARGS", "volume " + v);
-        const input = usable("volume", inBar(SEL.volume));
-        const { min, max } = rangeOf(input);
-        await setRange("volume", SEL.volume, min + Math.min(1, Math.max(0, level)) * (max - min));
+        if (!player()) throw fail("E_NOT_FOUND", "control volume");
+        call("setVolume", Math.round(Math.min(1, Math.max(0, level)) * 100));
         return { volume: readVolume() };
       },
-      setShuffle: (on) => settle(settleOpts("shuffle", readShuffle, !!on, SEL.shuffle, 2)),
+      setMuted: async (on) => {
+        call(on ? "mute" : "unMute");
+        return !!on;
+      },
+      // Shuffle reorders the queue once; turning it "off" changes nothing.
+      setShuffle: async (on) => {
+        if (on) press("shuffle", SEL.shuffle);
+        return false;
+      },
       setRepeat: async (mode) => {
         if (!/^(off|context|track)$/.test(mode)) throw fail("E_BAD_ARGS", "repeat " + mode);
-        return settle(settleOpts("repeat", () => readRepeat(inBar(SEL.repeat)), mode, SEL.repeat, 3));
+        for (let i = 0; readRepeat() !== mode; i++) {
+          if (i >= 3) throw fail("E_TIMEOUT", "repeat is " + readRepeat() + ", not " + mode);
+          const before = readRepeat();
+          press("repeat", SEL.repeat);
+          if (!(await waitFor(() => readRepeat() !== before, 1500, 50))) throw fail("E_TIMEOUT", "repeat did not change");
+        }
+        return mode;
       },
-      // The like button adds a track to Liked Songs. On a liked track it
-      // opens the "Add to playlist" picker instead: Liked Songs is unchecked
-      // there and the picker closed with Done.
       setLiked: async (on) => {
         refuseDuringAd("setLiked");
         const target = !!on;
         if (readLiked() === target) return target;
-        press("like", SEL.like);
-        const choice = await waitFor(() => (readLiked() === target ? "settled" : likedChoice()), 2000, 50);
-        if (choice && choice !== "settled") {
-          if ((choice.getAttribute("aria-checked") === "true") !== target) choice.click();
-          const done = await waitFor(() => pickerDone(choice), 2000, 50);
-          usable("like picker's Done", done).click();
+        const scope = inBar(SEL.like) || doc;
+        // The first alternative that exists, in the order given (a comma list
+        // would match the wrapper before the button inside it).
+        const button = SEL.likeButton.map((selector) => q(selector, scope)).find(Boolean);
+        if (button) {
+          button.click();
+          if (await waitFor(() => readLiked() === target, 2500, 50)) return target;
         }
-        if (!(await waitFor(() => readLiked() === target, 3000, 50))) throw fail("E_TIMEOUT", "liked did not change to " + target);
+        // The bar's button did not take: ask the API.
+        const videoId = videoIdNow();
+        if (!videoId) throw fail("E_NOTHING_LOADED", "nothing to like");
+        await innertube(target ? "like/like" : "like/removelike", { target: { videoId } });
         return target;
       },
-      setMuted: (on) => settle(settleOpts("muted", readMuted, !!on, SEL.mute, 2)),
 
-      // Plays a playlist, album, artist or Liked Songs from its start, or from
-      // the track `trackUri` of it.
+      // Plays a playlist, album, artist, mix or Liked Music from its start, or
+      // from the track `trackUri` of it.
       async playContext(uri, trackUri) {
         if (typeof uri !== "string") throw fail("E_BAD_ARGS", "playContext needs a URI");
         if (trackUri != null && typeof trackUri !== "string") throw fail("E_BAD_ARGS", "playContext takes a track URI or null, not " + JSON.stringify(trackUri));
         refuseDuringAd("playContext");
-        const path = await openPage(uri);
-        if (!trackUri) {
-          const button = usable("play-button", await waitFor(() => pagePlay(path), 10000));
-          if (/pause/i.test(button.getAttribute("aria-label") || "")) return { confirmed: true }; // already playing it
-          button.click();
-          const ok = await waitFor(() => /pause/i.test((pagePlay(path) && pagePlay(path).getAttribute("aria-label")) || "") || playerState().ad, 6000, 150);
-          return { confirmed: !!ok };
+        const target = await playTarget(uri);
+        if (trackUri) {
+          const track = parseUri(trackUri);
+          if (track.kind !== "track") throw fail("E_BAD_ARGS", "not a track: " + trackUri);
+          target.videoId = track.id;
         }
-        const current = playerState();
-        if (current.trackUri === trackUri && current.playing && sameContext(path)) return { confirmed: true };
-        const row = await findRow(trackUri);
-        if (!row) throw fail("E_NOT_FOUND", "track " + trackUri + " on " + uri);
-        if (row.scrollIntoView) row.scrollIntoView({ block: "center" });
-        await sleep(50);
-        const button = q(SEL.rowPlay, row);
-        if (button && /^pause/i.test(button.getAttribute("aria-label") || "")) return { confirmed: true };
-        if (button) usable("row play", button).click();
-        else row.dispatchEvent(new win.MouseEvent("dblclick", { bubbles: true }));
-        return { confirmed: await confirmTrack(trackUri) };
+        shared.asked = { uri, list: target.playlistId };
+        return watch(target);
       },
 
-      // Plays one track on its own page (its radio follows it). A track that
-      // already plays goes on; a paused one resumes.
+      // Plays one song; its radio follows it.
       async playTrack(uri) {
-        if (kindOf(uri) !== "track") throw fail("E_BAD_ARGS", "not a track: " + uri);
+        const { kind, id } = parseUri(uri);
+        if (kind !== "track") throw fail("E_BAD_ARGS", "not a track: " + uri);
         refuseDuringAd("playTrack");
-        const current = playerState();
-        if (current.trackUri === uri) {
-          if (!current.playing) await controls.play();
+        if (videoIdNow() === id) {
+          if (!readPlaying()) await controls.play();
           return { confirmed: true };
         }
-        await openPage(uri);
-        const button = usable("play-button", await waitFor(() => q(SEL.actionPlay), 10000));
-        if (!/pause/i.test(button.getAttribute("aria-label") || "")) button.click();
-        return { confirmed: await confirmTrack(uri) };
+        shared.asked = null;
+        return watch({ videoId: id });
       },
     };
 
@@ -1253,8 +1104,6 @@
     const surface = {
       protocol: PROTOCOL,
       revision: REVISION,
-      // The engine calls these with Runtime.evaluate: the plain JSON value, or
-      // a rejection with Error("E_CODE: message").
       async call(name, args) {
         try {
           if (!alive) throw fail("E_DISPOSED", "the bridge was replaced");
@@ -1273,20 +1122,6 @@
         timers.timeouts.forEach((id) => win.clearTimeout(id));
         timers.intervals = [];
         timers.timeouts = [];
-        if (shared.onFetch === learn) shared.onFetch = null;
-        // Give the page back its own fetch and media play, unless something
-        // wrapped ours since (then ours stays, hookless).
-        if (shared.fetchWrapper && win.fetch === shared.fetchWrapper) {
-          win.fetch = shared.fetch;
-          shared.fetch = null;
-          shared.fetchWrapper = null;
-        }
-        const proto = win.HTMLMediaElement && win.HTMLMediaElement.prototype;
-        if (proto && shared.playWrapper && proto.play === shared.playWrapper) {
-          proto.play = shared.play;
-          shared.play = null;
-          shared.playWrapper = null;
-        }
       },
       tick, // for tests
     };
@@ -1326,33 +1161,38 @@
     PROTOCOL,
     REVISION,
     SEL,
+    LIKED_URI,
     fail,
     codeOf,
     messageOf,
     envelope,
     toError,
-    need,
-    trackIdFromHref,
-    pathOf,
-    isCollection,
-    quantize,
-    rangeOf,
+    find,
+    findAll,
+    text,
+    clockMs,
+    thumbOf,
+    targetOf,
+    trackOf,
+    itemOf,
+    homeOf,
+    searchOf,
+    collectionOf,
+    continuedTracks,
+    artistOf,
+    libraryOf,
+    meOf,
+    lyricsBrowseIdOf,
+    lyricsOf,
+    paletteOf,
     stateKey,
     shouldPost,
-    timeOf,
-    pickMedia,
-    barTime,
-    adFrom,
-    isDisabled,
-    usable,
-    settle,
-    createHashCache,
-    paletteOf,
-    lyricsOf,
-    item,
-    track,
-    likedTrack,
-    likedTracks,
+    repeatOf,
+    parseUri,
+    watchOf,
+    contextOf,
+    authorizationOf,
+    cookiesOf,
     createBridge,
     install,
   };

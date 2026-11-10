@@ -170,11 +170,11 @@ function fakeWindow(body) {
   const intervals = new Set();
   const win = {
     document: documentRoot,
-    location: { pathname: "/", href: "https://open.spotify.com/" },
+    location: { pathname: "/", href: "https://music.youtube.com/", assign(url) { win.assigned = url; } },
     history: {
       pushState(_s, _t, path) {
         win.location.pathname = path;
-        win.location.href = "https://open.spotify.com" + path;
+        win.location.href = "https://music.youtube.com" + path;
       },
     },
     navigator: {},
@@ -184,6 +184,7 @@ function fakeWindow(body) {
     Event: FakeEvent,
     MouseEvent: FakeEvent,
     PopStateEvent: FakeEvent,
+    CustomEvent: class extends FakeEvent { constructor(type, init) { super(type, init); this.detail = init && init.detail; } },
     dispatchEvent: (e) => (win.onDispatch ? win.onDispatch(e) : true),
     setTimeout: (f, ms) => setTimeout(f, ms),
     clearTimeout: (id) => clearTimeout(id),
