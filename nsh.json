@@ -1,0 +1,25 @@
+{
+  "name": "Spotish",
+  "id": "dev.huacnlee.spotish",
+  "version": "0.1.1",
+  "build": 1,
+  "icon": "icon.png",
+  "appearance": "system",
+  "theme": "theme.json",
+  "window": {
+    "titleBar": {
+      "style": "hidden",
+      "height": 52
+    }
+  },
+  "rust": ".",
+  "minRuntime": "0.4.0",
+  "updater": {
+    "github": "huacnlee/spotish"
+  },
+  "macos": {
+    "infoPlist": {
+      "NSAudioCaptureUsageDescription": "Spotish listens to the music it plays so its lights move with the beat. The sound never leaves this Mac."
+    }
+  }
+}

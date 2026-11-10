@@ -1,0 +1,85 @@
+# Porsche 911 - a carmine Porsche 911 on a black road under a full moon.
+#
+# Every value is sampled from the wallpaper. The night sky is the canvas, wet
+# asphalt is the raised surface, moonlight is the brightest text, and the car's
+# lit body panel is the only saturated color on screen.
+#
+# Both palette forms are present on purpose: Omarchy 4 reads the semantic names
+# and Omarchy 3 reads the ANSI ones. Semantic names win where both are defined.
+
+mode = "dark"
+
+# --- Semantic palette (Omarchy 4) ---------------------------------------
+
+accent = "#9c2331"    # carmine body panel, taken well down in lightness
+selection = "#521321" # the car's shadowed flank
+muted = "#4e4547"     # wet asphalt
+
+background = "#0a0708"         # night, one breath above true black
+dark_background = "#060405"    # road at the edge of the light
+darker_background = "#000000"  # the sky
+lighter_background = "#161112" # asphalt, raised surfaces
+
+foreground = "#bfb8b6"        # body copy
+dark_foreground = "#7a6f72"   # comments, placeholders, disabled
+light_foreground = "#d8d1c8"  # secondary headings
+bright_foreground = "#f5eedc" # moonlight: headings and cursor
+
+# Omarchy pipes `accent` into every emphasis slot it themes -- Claude Code's
+# prompt border, btop's shortcut letters and process box, the bar's countdown
+# and selection, VS Code's buttons and borders. That makes it the loudest thing
+# on screen in a dozen places at once, so it is held at 0.44x the relative
+# luminance of the sampled carmine and stays well above the top of the
+# window-border sweep.
+#
+# Only the accent is allowed to be loud. The rest carry enough chroma to be told
+# apart at a glance and stop well short of it -- green, blue and cyan used to
+# sit at chroma 17, 17 and 8, which reads as three shades of grey rather than as
+# three colors.
+red = "#ee727b"     # specular highlight on the rear haunch
+yellow = "#dcbd82"  # the moon's rim
+orange = "#e18f60"  # warm rim light between moon and car
+green = "#849858"   # dry grass at the road's edge
+cyan = "#9b7a2e"    # brass trim, warm under the moon
+blue = "#7099a8"    # night steel: the one cool colour, kept quiet
+magenta = "#d07999" # the car's reflection on the road
+brown = "#765c42"   # moon shadow
+
+bright_red = "#ff9da1"
+bright_yellow = "#faf0ca" # the moon's core, sampled
+bright_green = "#aaba85"
+bright_cyan = "#be8d7c"
+bright_blue = "#95b6c2"
+bright_magenta = "#e39cb5"
+
+# --- Window and tab chrome ----------------------------------------------
+
+# The active border sweeps from deep carmine to the theme accent, making focus
+# easy to spot without exceeding the palette's primary emphasis color.
+hyprland_active_border = "rgba(6f1828e6) rgba(9c2331e6) 45deg"
+hyprland_inactive_border = "rgb(1a1516)"
+active_border_color = "#9c2331"
+active_tab_background = "#521321"
+
+# --- ANSI palette (Omarchy 3) -------------------------------------------
+
+cursor = "#f5eedc"
+selection_foreground = "#f5eedc"
+selection_background = "#521321"
+
+color0  = "#1a1516"
+color1  = "#ee727b"
+color2  = "#849858"
+color3  = "#dcbd82"
+color4  = "#7099a8"
+color5  = "#d07999"
+color6  = "#9b7a2e"
+color7  = "#bfb8b6"
+color8  = "#4e4547"
+color9  = "#ff9da1"
+color10 = "#aaba85"
+color11 = "#faf0ca"
+color12 = "#95b6c2"
+color13 = "#e39cb5"
+color14 = "#be8d7c"
+color15 = "#f5eedc"

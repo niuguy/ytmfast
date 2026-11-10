@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # QuickJS is C (bindgen needs libclang); the Linux host links GTK 4 and GStreamer (NSH's audio).
+      - name: Install clang, GTK 4 and GStreamer
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # The registry, the NSH Git checkout and target/ (the app's crate and
+      # the hosts nsh generates for it).
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Spotish follows NSH's main: the nightly CLI (https://nsh.dev/docs/installation).
+      - name: Install the NSH CLI (nightly)
+        run: |
+          curl -fsSL https://nsh.dev/install.sh | sh -s -- --nightly
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Cargo.lock holds NSH's main at the commit the CLI was built from.
+      # The nightly tag moves; say so when they part (see CONTRIBUTING.md).
+      - name: Compare the CLI with the locked NSH
+        run: |
+          cli="$(nsh --version | sed -n 's/.*(\([0-9a-f]\{7,\}\)[ )].*/\1/p')"
+          locked="$(grep -A2 '^name = "nsh-core"$' Cargo.lock | sed -n 's/^source = ".*#\([0-9a-f]*\)"$/\1/p')"
+          echo "nsh CLI: $cli, Cargo.lock: $locked"
+          case "$locked" in
+            "$cli"*) ;;
+            *) echo "::warning::The nightly nsh CLI ($cli) is not the NSH commit Cargo.lock holds ($locked); run cargo update -p nsh-core." ;;
+          esac
+
+      - name: nsh check
+        run: nsh check
+
+      - name: nsh test
+        run: nsh test
+
+      - name: cargo test
+        run: cargo test
+
+      - name: Bridge
+        run: |
+          node --check src/bridge/bridge.js
+          shopt -s nullglob
+          tests=(src/bridge/*.test.mjs)
+          if [ ${#tests[@]} -gt 0 ]; then
+            node --test "${tests[@]}"
+          else
+            echo "No bridge tests."
+          fi

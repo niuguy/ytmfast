@@ -1,0 +1,8 @@
+/target
+/.nsh
+/scratch
+*.log
+/website/dist
+/website/node_modules
+/website/.astro
+.DS_Store

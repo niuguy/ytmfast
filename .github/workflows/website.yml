@@ -1,0 +1,66 @@
+# Builds the website (website/, Astro with Bun) and publishes it to GitHub Pages, a project site at
+# https://huacnlee.github.io/spotish/ (astro.config.mjs sets that `site` and `base`). It runs when a push to main
+# changes the site, and by hand. The site serves install.sh and install.ps1, so a change to them goes out with it.
+# The repository's Pages source must be "GitHub Actions" (Settings → Pages).
+name: Website
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push waits rather than cancelling one half done.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+    working-directory: website
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      # Gives the Pages URL; the config already defaults to it, and a custom domain would come through here.
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # `astro check`, then `astro build`.
+      - name: Build
+        env:
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: bun run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

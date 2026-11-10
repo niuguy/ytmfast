@@ -1,0 +1,54 @@
+[package]
+name = "nsh-app-spotish"
+version = "0.1.1"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+# The app's UI set (a library the CLI links into its generated hosts).
+
+[dependencies]
+# NSH's main branch, at the commit Cargo.lock holds: the one the `nsh` CLI was
+# built from (`nsh --version` prints it). The CLI builds its hosts from the same
+# Git checkout; move the lock with `cargo update -p nsh-core` together with the
+# CLI. See CONTRIBUTING.md.
+nsh-core = { git = "https://github.com/longbridge/nsh", branch = "main" }
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tungstenite = "0.26"
+tokio = { version = "1", features = ["sync"] }
+toml = "0.9"
+# Platform data directories (XDG on Linux, Application Support on macOS,
+# %LOCALAPPDATA% on Windows).
+dirs = "6"
+# SQLite's backup API: copies a browser's cookie database consistently
+# (bundled, so no system SQLite is needed).
+rusqlite = { version = "0.38", features = ["bundled", "backup"] }
+# prctl/kill/atexit (atexit also on Windows).
+libc = "0.2"
+
+# Platform integrations (src/media.rs, src/theme.rs): desktop only.
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+souvlaki = { version = "0.9", default-features = false, features = ["use_zbus"] }
+notify = "8"
+# The audio meter's spectrum (src/audio.rs).
+rustfft = "6"
+
+# The audio meter's recording on macOS (src/audio.rs): a Core Audio process
+# tap on the browser's processes.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSString", "NSUUID", "NSValue", "NSObject"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFBase", "CFDictionary", "CFString"] }
+objc2-core-audio = { version = "0.3", default-features = false, features = ["std", "AudioHardware", "objc2", "objc2-foundation", "objc2-core-audio-types"] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
+
+[dev-dependencies]
+nsh-engine = { git = "https://github.com/longbridge/nsh", branch = "main" }
+nsh-testing = { git = "https://github.com/longbridge/nsh", branch = "main" }
