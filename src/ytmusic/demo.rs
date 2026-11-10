@@ -1,6 +1,7 @@
-//! A session with no browser, answering from data recorded from the web
-//! player: what the tests run on, and `YTMFAST_DEMO=1` shows (the look of
-//! the app without an account).
+//! A session with no browser, answering from data the bridge recorded from
+//! YouTube Music (`cargo run --example probe -- <call>`, signed out): what
+//! the tests run on, and what `YTMFAST_DEMO=1` shows (the look of the app
+//! without an account).
 
 use std::thread::JoinHandle;
 
@@ -65,7 +66,7 @@ pub fn answer(command: &Command) -> Answer {
         Command::Library => {
             let home = parse(HOME);
             let mut items = vec![json!({
-                "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Songs",
+                "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Music",
                 "subtitle": "12 songs", "image": ""
             })];
             for section in home["sections"].as_array().into_iter().flatten() {
@@ -83,7 +84,7 @@ pub fn answer(command: &Command) -> Answer {
         Command::LikedSongs => {
             let mut album = parse(ALBUM);
             album["header"] = json!({
-                "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Songs",
+                "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Music",
                 "subtitle": "12 songs", "image": "", "description": ""
             });
             Ok(album)
@@ -130,7 +131,7 @@ pub fn player() -> Player {
         album: track.album,
         artwork: track.image,
         track_uri: track.uri,
-        context_href: "/album/6dVIqQ8qmQ5GBnJ9shOYGE".into(),
+        context_href: "ytm:album:MPREb_yXhSI4FCUo6".into(),
         playing: false,
         can_play: true,
         position_ms: 64_000.0,

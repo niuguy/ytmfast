@@ -113,7 +113,7 @@ pub enum Command {
         track_uri: Option<String>,
     },
     PlayTrack(String),
-    /// The extracted color of a cover image (Spotify's own).
+    /// The extracted color of a cover image.
     Colors(String),
     /// A track's lyrics, by its URI.
     Lyrics(String),
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(state.repeat, Repeat::Context);
         assert_eq!(state.volume, 0.7);
         assert_eq!(state.premium, Some(false));
-        assert_eq!(state.context_href, "/album/6dVIqQ8qmQ5GBnJ9shOYGE");
+        assert_eq!(state.context_href, "ytm:album:MPREb_yXhSI4FCUo6");
     }
 
     #[test]
@@ -366,7 +366,7 @@ mod tests {
         let album: Collection =
             decode(&Command::Home, serde_json::from_str(include_str!("fixtures/album.json")).unwrap()).unwrap();
         assert_eq!(album.header.name, "OK Computer");
-        assert_eq!(album.tracks[0].duration_ms, 287_880.0);
+        assert_eq!(album.tracks[0].duration_ms, 288_000.0);
         let search: SearchResults =
             decode(&Command::Home, serde_json::from_str(include_str!("fixtures/search.json")).unwrap()).unwrap();
         assert!(!search.is_empty());

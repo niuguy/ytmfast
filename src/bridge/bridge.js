@@ -42,7 +42,7 @@
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 3;
+  const REVISION = 4;
   const ORIGIN = "https://music.youtube.com";
   const LIKED_ID = "LM";
   const LIKED_URI = "ytm:collection:" + LIKED_ID;
@@ -408,7 +408,8 @@
   const artistOf = (json, uri) => {
     const h = headerOf(json);
     const name = text(h.title);
-    const subtitle = tidy(text(find(h, "subscriberCountText")) || text(h.monthlyListenerCount) || "Artist");
+    // "205M monthly audience", else "5.46M subscribers".
+    const subtitle = tidy(text(h.monthlyListenerCount) || text(find(h, "longSubscriberCountText")) || text(find(h, "subscriberCountText")) || "Artist");
     const description = text(h.description) || text(find(h.description, "description"));
     const songsShelf = find(json, "musicShelfRenderer") || {};
     const tracks = (songsShelf.contents || []).map((c, i) => trackOf(c && c.musicResponsiveListItemRenderer, i)).filter(Boolean);

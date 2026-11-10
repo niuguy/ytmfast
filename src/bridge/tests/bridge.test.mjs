@@ -253,7 +253,7 @@ test("an artist page: top songs, albums and singles, and what plays", () => {
         title: runs("Mira Vale"),
         description: runs("Dream pop."),
         thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://lh3.googleusercontent.com/mv=w544-h544", 544) } },
-        subscriptionButton: { subscribeButtonRenderer: { subscriberCountText: runs("1.2M") } },
+        subscriptionButton: { subscribeButtonRenderer: { subscriberCountText: runs("1.2M"), longSubscriberCountText: runs("1.2M subscribers") } },
         startRadioButton: { buttonRenderer: { navigationEndpoint: { watchPlaylistEndpoint: { playlistId: "RDEMmira", params: "wAEB" } } } },
       },
     },
@@ -280,7 +280,9 @@ test("an artist page: top songs, albums and singles, and what plays", () => {
   };
   const page = B.artistOf(json, "ytm:artist:UCm");
   assert.equal(page.collection.header.name, "Mira Vale");
-  assert.equal(page.collection.header.subtitle, "1.2M");
+  assert.equal(page.collection.header.subtitle, "1.2M subscribers");
+  json.header.musicImmersiveHeaderRenderer.monthlyListenerCount = runs("3.4M monthly audience");
+  assert.equal(B.artistOf(json, "ytm:artist:UCm").collection.header.subtitle, "3.4M monthly audience");
   assert.deepEqual(page.collection.tracks.map((t) => t.uri), ["ytm:track:t1"]);
   assert.deepEqual(page.collection.releases.map((r) => r.uri), ["ytm:album:MPREb_n", "ytm:album:MPREb_k"]);
   assert.equal(page.songsPlaylistId, "OLAK5uy_top");
