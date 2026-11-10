@@ -1,6 +1,6 @@
 // The desktop shell: a tray icon with the player's controls, and a main
 // window that hides instead of quitting when it is closed, so music keeps
-// playing (Spotify's own desktop app does the same). Desktop only: on the
+// playing (as music players do). Desktop only: on the
 // web, phones and terminals `installDesktopShell` does nothing.
 //
 // Wiring (App.tsx, in the root component's body, which runs once):
@@ -9,8 +9,8 @@
 //     isPlaying: () => store.player().playing,
 //     title: () => nowPlayingTitle(store.player()),
 //     togglePlay: store.toggle,
-//     next: () => store.control("next", () => store.spotify.next()),
-//     previous: () => store.control("previous", () => store.spotify.previous()),
+//     next: () => store.control("next", () => store.ytm.next()),
+//     previous: () => store.control("previous", () => store.ytm.previous()),
 //     showNowPlaying: () => store.nowPlaying.set(true),
 //   });
 //
@@ -27,6 +27,7 @@
 
 import { cleanup, effect, platform, token } from "nsh";
 import { Application, currentWindow, isAvailable, Tray, type WindowRef, windows } from "nsh/desktop";
+import { MARK } from "../ui/logo";
 
 /** What the desktop shell needs from the player. */
 export interface DesktopShellOptions {
@@ -63,18 +64,15 @@ export function trayTitle(title: string): string {
   return t.length > 60 ? `${t.slice(0, 59)}…` : t;
 }
 
-/** The tray glyph (the logo's three level bars) in `color`, as an SVG data
- * URI. Monochrome: a template on macOS, the panel's text color elsewhere. */
+/** The tray glyph (the logo's play mark and speed lines) in `color`, as an
+ * SVG data URI. Monochrome: a template on macOS, the panel's text color
+ * elsewhere. */
 export function trayIcon(color: string): string {
   // `token()` gives #rrggbbaa; SVG renderers differ on 8-digit hex.
   if (/^#[0-9a-f]{8}$/i.test(color)) color = color.slice(0, 7);
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">` +
-    `<g fill="${color}">` +
-    `<rect x="4" y="9.5" width="4" height="11" rx="2"/>` +
-    `<rect x="10" y="3.5" width="4" height="17" rx="2"/>` +
-    `<rect x="16" y="12.5" width="4" height="8" rx="2"/>` +
-    `</g></svg>`;
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 2 28 28" width="24" height="24">` +
+    `<g fill="${color}">${MARK}</g></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
