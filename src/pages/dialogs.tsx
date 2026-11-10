@@ -5,7 +5,7 @@
 import { keymap, Scroll, Text, View } from "nsh";
 import { ActionButton, IconButton, terminal, TextLink } from "../components/ui/controls";
 import { AppDialog, AppSheet } from "../components/ui/overlays";
-import { NSH_URL, openExternal, openPremium, SPOTISH_URL, TERMS_URL, YTM_URL } from "../state/links";
+import { NSH_URL, openExternal, openPremium, REPO_URL, SPOTISH_URL, TERMS_URL, YTM_URL } from "../state/links";
 import { aboutOpen, finishFirstRun, firstRunOpen, setAboutOpen, setShortcutsOpen, shortcutsOpen } from "../state/overlays";
 import { REGION_KEYS } from "../components/ui/regions";
 import { cancelSignIn, health, signedIn, signIn } from "../state/session";
@@ -92,7 +92,8 @@ export function ShortcutsDialog() {
   );
 }
 
-/** About YTMFast: the disclaimer first, Premium, then NSH and Spotish. */
+/** About YTMFast: the disclaimer first, Premium, then NSH, the source and
+ * Spotish, the app it is forked from. */
 export function AboutDialog() {
   return (
     <AppDialog open={aboutOpen()} onOpenChange={setAboutOpen} testID="about">
@@ -132,7 +133,8 @@ export function AboutDialog() {
         </View>
         <View class="flex-row flex-wrap gap-x-4 gap-y-1">
           <TextLink label="Built with NSH" onPress={() => openExternal(NSH_URL)} />
-          <TextLink label="Based on Spotish" onPress={() => openExternal(SPOTISH_URL)} />
+          <TextLink label="Source on GitHub" onPress={() => openExternal(REPO_URL)} />
+          <TextLink label="Forked from Spotish" onPress={() => openExternal(SPOTISH_URL)} />
         </View>
       </Scroll>
     </AppDialog>

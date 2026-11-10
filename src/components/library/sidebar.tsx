@@ -8,7 +8,7 @@ import { AlertDialog, Button, Menu, MenuItem, MenuSeparator } from "nsh/base";
 import type { Item } from "../../backend/types";
 import { libraryQuery, meQuery } from "../../data/queries";
 import { currentRoute, type Route, switchTo } from "../../nav";
-import { NSH_URL, openExternal, openPremium, SPOTISH_URL, YTM_URL } from "../../state/links";
+import { NSH_URL, openExternal, openPremium, REPO_URL, YTM_URL } from "../../state/links";
 import { setAboutOpen, setDrawerOpen } from "../../state/overlays";
 import { isCurrentContext, isPlayingContext, player } from "../../state/player";
 import { signedIn, signIn, signOut } from "../../state/session";
@@ -379,7 +379,7 @@ function MenuEntries(props: { name: string; image: string }) {
       <Entry icon="music" label="YouTube Music" external onSelect={() => openExternal(YTM_URL)} />
       <Separator />
       <Entry icon="info" label="About…" onSelect={() => setAboutOpen(true)} />
-      <Entry icon="github" label="Spotish" external onSelect={() => openExternal(SPOTISH_URL)} />
+      <Entry icon="github" label="GitHub" external onSelect={() => openExternal(REPO_URL)} />
       <Entry icon="code" label="NSH" external onSelect={() => openExternal(NSH_URL)} />
       {/* NSH's performance monitor: frame rate, frame and commit costs. */}
       <Entry icon="activity" label="FPS" checked={fpsEnabled()} onSelect={() => setFpsEnabled(!fpsEnabled())} />

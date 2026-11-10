@@ -6,7 +6,9 @@ export const PREMIUM_URL = "https://www.youtube.com/musicpremium";
 export const YTM_URL = "https://music.youtube.com/";
 export const TERMS_URL = "https://www.youtube.com/t/terms";
 export const NSH_URL = "https://nsh.dev";
-/** Spotish, the Spotify client this app is built from. */
+/** YTMFast's source. */
+export const REPO_URL = "https://github.com/niuguy/ytmfast";
+/** Spotish, the native Spotify client YTMFast is forked from. */
 export const SPOTISH_URL = "https://github.com/huacnlee/spotish";
 
 /** Opens `url` in the system browser; anything but https is refused. */
