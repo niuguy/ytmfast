@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 22
 
-      # Spotish follows NSH's main: the nightly CLI (https://nsh.dev/docs/installation).
+      # YTMFast follows NSH's main: the nightly CLI (https://nsh.dev/docs/installation).
       - name: Install the NSH CLI (nightly)
         run: |
           curl -fsSL https://nsh.dev/install.sh | sh -s -- --nightly

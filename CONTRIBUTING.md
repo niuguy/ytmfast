@@ -1,22 +1,22 @@
-# Contributing to Spotish
+# Contributing to YTMFast
 
 Contributions are welcome. If you find a bug or have an idea, please open an issue or a pull request.
 
 Please submit **one PR that does one thing** — it is easier to review and faster to merge. Write clean code that
 follows the style and organization of the code around it, and make sure the checks below pass.
 
-## Respecting Spotify
+## Respecting YouTube
 
-Spotish plays through Spotify's own web player with the listener's own account, and it **never blocks, skips, mutes,
-hides or shortens Spotify's ads**. Keep it that way: changes that remove ads or get around Spotify Free's limits (on
-demand play, skips) will not be merged. Point listeners to Spotify Premium instead. Spotish is unofficial: use
-"Spotify" only to say what Spotish works with, and do not use Spotify's logo, green or look.
+YTMFast plays through YouTube Music's own web player with the listener's own account, and it **never blocks, skips,
+mutes, hides or shortens YouTube's ads**. Keep it that way: changes that remove ads or get around the free tier's limits
+will not be merged. Point listeners to YouTube Music Premium instead. YTMFast is unofficial: use "YouTube Music" only
+to say what YTMFast works with, and do not use YouTube's logo, red or look.
 
 ## Setup
 
 1. **Rust** through [rustup](https://rustup.rs), and on Linux GTK 4.14+ development packages (see NSH's
    [installation guide](https://nsh.dev/docs/installation.md)).
-2. **The `nsh` CLI, nightly.** Spotish follows NSH's `main` branch. Install the nightly build (macOS arm64, Linux
+2. **The `nsh` CLI, nightly.** YTMFast follows NSH's `main` branch. Install the nightly build (macOS arm64, Linux
    x86_64; Windows: `$env:NSH_VERSION="nightly"; irm https://nsh.dev/install.ps1 | iex`):
 
    ```sh
@@ -27,7 +27,7 @@ demand play, skips) will not be merged. Point listeners to Spotify Premium inste
 3. **A browser with Widevine**: Google Chrome, Chromium, Microsoft Edge or Brave. Only needed to play music, not for
    demo mode or the tests.
 
-### How Spotish depends on NSH
+### How YTMFast depends on NSH
 
 `Cargo.toml` takes NSH's crates from Git, from its `main` branch:
 
@@ -51,15 +51,15 @@ nobody else has your checkout.
 
 ```sh
 nsh run                       # build the engine, bundle the TSX interface, run on this machine
-SPOTISH_DEMO=1 nsh run        # demo mode: recorded sample data, no browser, no account
+YTMFAST_DEMO=1 nsh run        # demo mode: recorded sample data, no browser, no account
 nsh run --target tui          # the terminal interface
 ```
 
-- **Demo mode** (`SPOTISH_DEMO=1`) is the quickest way to work on the interface, and is what Web and mobile run.
-- **Importing an existing login.** Set `SPOTISH_PROFILE` to the profile directory of a browser you are already signed
-  in to Spotify with (for example `~/.config/chromium` or `~/.config/google-chrome`). Spotish imports that login once
+- **Demo mode** (`YTMFAST_DEMO=1`) is the quickest way to work on the interface, and is what Web and mobile run.
+- **Importing an existing login.** Set `YTMFAST_PROFILE` to the profile directory of a browser you are already signed
+  in to YouTube Music with (for example `~/.config/chromium` or `~/.config/google-chrome`). YTMFast imports that login once
   into its own profile; close that browser first. Without it, press **Log in** and sign in in the window that opens.
-- `SPOTISH_BROWSER` picks the browser executable when Spotish does not find yours.
+- `YTMFAST_BROWSER` picks the browser executable when YTMFast does not find yours.
 
 ## Checks and tests
 
@@ -71,16 +71,17 @@ nsh build                              # describe the crate and bundle the TSX (
 nsh test                               # cargo test, then the *.test.tsx files headless
 cargo test                             # the Rust crate alone
 node --check src/bridge/bridge.js      # the bridge parses
-node --test src/bridge/*.test.mjs      # the bridge's tests, when present
+node --test src/bridge/tests/*.test.mjs  # the bridge's tests
+cargo run --example probe             # the engine and bridge against the live site (network)
 ```
 
-Tests never need a Spotify account or the network: test the engine on recorded bridge payloads
-(`src/spotify/fixtures/`), and the interface against demo data. If a test runs something that makes temporary
+Tests never need a Google account or the network: test the engine on recorded bridge payloads
+(`src/ytmusic/fixtures/`), and the interface against demo data. If a test runs something that makes temporary
 directories, point `TMPDIR` outside the repository.
 
 ## Commits and pull requests
 
-Spotish follows [NSH's rules](https://github.com/longbridge/nsh/blob/main/CONTRIBUTING.md) for commits and pull
+YTMFast follows [NSH's rules](https://github.com/longbridge/nsh/blob/main/CONTRIBUTING.md) for commits and pull
 requests:
 
 - **Every change goes through a pull request; nothing is pushed to `main` directly.** That includes documentation,
@@ -91,13 +92,13 @@ requests:
 - **Subjects and PR titles are `<area>: <What the change does>`.** The area is lower case and names one part, never
   several separated by commas. For a change that spans parts, name the part it is mostly about. After the colon comes
   an imperative sentence that starts with a capital letter, with no trailing period, about 72 characters in all. Say
-  what it does for people using Spotish, not which files changed. Never use conventional prefixes (`fix:`, `feat:`).
+  what it does for people using YTMFast, not which files changed. Never use conventional prefixes (`fix:`, `feat:`).
 
   The areas:
 
   | Area | What it covers |
   | --- | --- |
-  | `engine` | The Rust engine: the browser, CDP and the session (`src/spotify/`, `src/exports.rs`) |
+  | `engine` | The Rust engine: the browser, CDP and the session (`src/ytmusic/`, `src/exports.rs`) |
   | `bridge` | The script that drives the web player (`src/bridge/`) |
   | `audio` | The audio meter (`src/audio.rs`, `src/platform/audio.ts`) |
   | `media` | The system's media controls and keys (`src/media.rs`, `src/platform/media.ts`) |
@@ -120,7 +121,7 @@ requests:
 
 Rust (the engine):
 
-- `src/spotify/` — runs and drives Spotify's web player in your browser over the DevTools protocol (browser discovery
+- `src/ytmusic/` — runs and drives YouTube Music's web player in your browser over the DevTools protocol (browser discovery
   and launch, the CDP connection, the session), the typed models of what it returns, and demo data.
 - `src/exports.rs` — what the engine exports to TSX (`#[class]` classes and `JsObject` types). This is the only
   door between Rust and TSX; keep it typed.
@@ -128,14 +129,14 @@ Rust (the engine):
 
 The bridge:
 
-- `src/bridge/bridge.js` — the script installed in the web player. It reads what the player uses to talk to Spotify
+- `src/bridge/bridge.js` — the script installed in the web player. It asks YouTube Music's API (InnerTube) what the page would
   and reports the player's state. Every selector and query name of the web player is read in this one file, so a
-  change to Spotify's web player is mended here. Its tests sit beside it as `*.test.mjs`.
+  change to YouTube Music's web player is mended here. Its tests sit beside it as `*.test.mjs`.
 
 TSX (the interface), from `App.tsx`:
 
 - `src/backend/` — the `Backend` interface and its implementations: the engine (desktop, TUI), demo data (Web, mobile,
-  tests) and, later, a remote control for a desktop Spotish.
+  tests) and, later, a remote control for a desktop YTMFast.
 - `src/state/` — the app's stores (engine, player, session, feedback), the one owner of what the backend reports.
 - `src/data/` — data loading and the cache (keyed by account, cleared on sign-out).
 - `src/components/` — the app's own components: theme-token styling, icons, controls, and shared player pieces
@@ -153,5 +154,5 @@ installers, `website/public/install.sh` and `install.ps1`.
 
 ## Built on NSH
 
-Read NSH's [coding and design guides](https://nsh.dev/docs) before changing the interface, and keep the look Spotish's
+Read NSH's [coding and design guides](https://nsh.dev/docs) before changing the interface, and keep the look YTMFast's
 own.
