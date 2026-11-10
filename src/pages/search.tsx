@@ -61,7 +61,7 @@ export function SearchPage() {
             value={query()}
             onChange={({ value }) => query.set(value)}
             placeholder="What do you want to play?"
-            accessibilityLabel="Search Spotify"
+            accessibilityLabel="Search YouTube Music"
             returnKeyType="search"
             autoFocus={!terminal}
             class="flex-1 text-base text-foreground"
@@ -74,7 +74,7 @@ export function SearchPage() {
       </View>
       </If>
       <Scroll class="flex-1" contentClass={pageEnd()}>
-        <If when={term()} else={<EmptyState title="Search Spotify" detail="Find songs, artists, albums and playlists." />}>
+        <If when={term()} else={<EmptyState title="Search YouTube Music" detail="Find songs, artists, albums and playlists." />}>
           {/* Results come in with the skeleton's reveal when nothing showed
               before them, their songs in a wave; a new search then keeps
               them, with the spinner, and its own just take their place. */}

@@ -9,12 +9,11 @@ import { type BackendError, errorOf } from "../backend/types";
 
 /** Every message the app shows as a toast. */
 export const MESSAGES = {
-  signInToPlay: "Log in to Spotify to play music.",
+  signInToPlay: "Sign in to YouTube Music to play music.",
   playFailed: "Couldn't play this. Try again.",
   likeFailed: "Couldn't update Liked Songs. Try again.",
-  signInFailed: "Couldn't open the Spotify login. Try again.",
-  retryFailed: "Spotify still isn't available. Quit Spotish and open it again.",
-  freeShuffles: "Spotify Free shuffles playlists. Premium lets you pick any song.",
+  signInFailed: "Couldn't open the Google sign-in. Try again.",
+  retryFailed: "YouTube Music still isn't available. Quit YTMFast and open it again.",
 } as const;
 
 export type MessageId = keyof typeof MESSAGES;

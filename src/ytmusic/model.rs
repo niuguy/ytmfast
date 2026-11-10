@@ -13,7 +13,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Item {
-    /// The Spotify URI (`spotify:playlist:…`).
+    /// The Spotify URI (`ytm:playlist:…`).
     pub uri: String,
     /// `playlist`, `album`, `artist`, `show`, `collection` or `track`.
     pub kind: String,
@@ -36,7 +36,7 @@ impl Item {
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Track {
-    /// The track's URI (`spotify:track:…`).
+    /// The track's URI (`ytm:track:…`).
     pub uri: String,
     /// Its row's id in the list (empty in search results).
     pub uid: String,
@@ -224,7 +224,7 @@ pub struct Player {
     pub album: String,
     /// The album art URL.
     pub artwork: String,
-    /// The track's URI (`spotify:track:…`).
+    /// The track's URI (`ytm:track:…`).
     pub track_uri: String,
     /// The path of the context playing (`/playlist/…`), for linking to it.
     pub context_href: String,
@@ -476,7 +476,7 @@ mod tests {
         // An exception's description: `Error: ` and the stack go.
         let e = EngineError::parse("Error: E_DISABLED: next is disabled\n    at controls.next (bridge.js:10)");
         assert_eq!(e, EngineError::new(ErrorCode::Disabled, "next is disabled"));
-        let e = EngineError::parse("Uncaught Error: E_NOT_FOUND: no row for spotify:track:x");
+        let e = EngineError::parse("Uncaught Error: E_NOT_FOUND: no row for ytm:track:x");
         assert_eq!(e.code, ErrorCode::NotFound);
         // Uncoded text is internal, kept whole.
         let e = EngineError::parse("TypeError: x is undefined");

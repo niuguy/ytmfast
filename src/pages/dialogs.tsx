@@ -5,13 +5,13 @@
 import { keymap, Scroll, Text, View } from "nsh";
 import { ActionButton, IconButton, terminal, TextLink } from "../components/ui/controls";
 import { AppDialog, AppSheet } from "../components/ui/overlays";
-import { NSH_URL, openExternal, openPremium, REPO_URL, SPOTIFY_URL, TERMS_URL } from "../state/links";
+import { NSH_URL, openExternal, openPremium, SPOTISH_URL, TERMS_URL, YTM_URL } from "../state/links";
 import { aboutOpen, finishFirstRun, firstRunOpen, setAboutOpen, setShortcutsOpen, shortcutsOpen } from "../state/overlays";
 import { REGION_KEYS } from "../components/ui/regions";
 import { cancelSignIn, health, signedIn, signIn } from "../state/session";
 import { Logo } from "../ui/logo";
 
-const DISCLAIMER = "Spotish is an unofficial client and is not affiliated with Spotify.";
+const DISCLAIMER = "YTMFast is an unofficial client and is not affiliated with YouTube or Google.";
 
 /** The keyboard, as the help lists it: what each key does, by section.
  * Several keystrokes in one row are alternatives (shown joined by "/"). */
@@ -92,7 +92,7 @@ export function ShortcutsDialog() {
   );
 }
 
-/** About Spotish: the disclaimer first, Premium, then NSH. */
+/** About YTMFast: the disclaimer first, Premium, then NSH and Spotish. */
 export function AboutDialog() {
   return (
     <AppDialog open={aboutOpen()} onOpenChange={setAboutOpen} testID="about">
@@ -106,40 +106,40 @@ export function AboutDialog() {
           </If>
           <View selectable={!terminal}>
             <Text role="header" class="text-xl font-extrabold text-foreground">
-              Spotish
+              YTMFast
             </Text>
-            <Text class="text-xs text-muted-foreground">A native player for Spotify</Text>
+            <Text class="text-xs text-muted-foreground">A native player for YouTube Music</Text>
           </View>
         </View>
         <View class="gap-2" selectable={!terminal}>
           <Text class="text-sm font-bold text-foreground">{DISCLAIMER}</Text>
           <Text class="text-sm text-muted-foreground">
-            It plays through Spotify's own web player, so a Spotify account is needed and Spotify's terms apply. Spotify, its
-            logo and all music, artwork and trademarks belong to Spotify and the rights holders.
+            It plays through YouTube Music's own web player, so a Google account is needed and YouTube's terms apply.
+            YouTube, its logo and all music, artwork and trademarks belong to Google and the rights holders.
           </Text>
           <View class="flex-row flex-wrap gap-x-4 gap-y-1">
-            <TextLink label="Spotify Terms" onPress={() => openExternal(TERMS_URL)} />
-            <TextLink label="Spotify" onPress={() => openExternal(SPOTIFY_URL)} />
+            <TextLink label="YouTube Terms" onPress={() => openExternal(TERMS_URL)} />
+            <TextLink label="YouTube Music" onPress={() => openExternal(YTM_URL)} />
           </View>
         </View>
         <View class={terminal ? "gap-1" : "gap-2 rounded-(--radius-card) border border-border p-4"}>
           <Text class="text-sm text-muted-foreground">
-            Spotish never blocks Spotify's ads. Premium removes them, plays any track on demand, and supports artists.
+            YTMFast never blocks YouTube's ads. Premium removes them and supports artists.
           </Text>
           <View class="flex-row pt-1">
-            <ActionButton label="Get Spotify Premium" variant="primary" onPress={openPremium} />
+            <ActionButton label="Get YouTube Music Premium" variant="primary" onPress={openPremium} />
           </View>
         </View>
         <View class="flex-row flex-wrap gap-x-4 gap-y-1">
           <TextLink label="Built with NSH" onPress={() => openExternal(NSH_URL)} />
-          <TextLink label="Source on GitHub" onPress={() => openExternal(REPO_URL)} />
+          <TextLink label="Based on Spotish" onPress={() => openExternal(SPOTISH_URL)} />
         </View>
       </Scroll>
     </AppDialog>
   );
 }
 
-/** While Spotify's login window is open. Escape, back and Cancel cancel it. */
+/** While Google's sign-in window is open. Escape, back and Cancel cancel it. */
 export function SigningInDialog() {
   const open = () => health().status === "signingIn";
   return (
@@ -153,10 +153,10 @@ export function SigningInDialog() {
     >
       <View class={terminal ? "gap-1" : "items-center gap-4 p-8"}>
         <Text role="header" class="text-xl font-bold text-foreground">
-          Log in to Spotify
+          Sign in to YouTube Music
         </Text>
         <Text class="text-center text-sm text-muted-foreground">
-          Log in in the Spotify window, then close it to finish.
+          Sign in with Google in the window that opened, then close it to finish.
         </Text>
         <ActionButton label="Cancel" onPress={cancelSignIn} />
       </View>
@@ -164,7 +164,7 @@ export function SigningInDialog() {
   );
 }
 
-/** Shown once, on the first launch: what Spotish is, and how to start. */
+/** Shown once, on the first launch: what YTMFast is, and how to start. */
 export function FirstRunSheet() {
   return (
     <AppSheet
@@ -181,7 +181,7 @@ export function FirstRunSheet() {
             <Logo size={44} />
           </If>
           <Text role="header" class="text-xl font-extrabold text-foreground">
-            Welcome to Spotish
+            Welcome to YTMFast
           </Text>
         </View>
         <Text class="text-sm text-foreground">{DISCLAIMER}</Text>
@@ -196,7 +196,7 @@ export function FirstRunSheet() {
               }}
             />
           </If>
-          <ActionButton label="Get Spotify Premium" onPress={openPremium} />
+          <ActionButton label="Get YouTube Music Premium" onPress={openPremium} />
           <ActionButton label={signedIn() === true ? "Start listening" : "Not now"} onPress={finishFirstRun} />
         </View>
         <TextLink label="Built with NSH" onPress={() => openExternal(NSH_URL)} />

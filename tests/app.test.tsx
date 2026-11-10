@@ -55,8 +55,8 @@ test("Back, Forward and the library move through the stack", async () => {
   // A root (Search) replaces the stack, and clears Forward. On a desktop
   // the header's Search opens a field; the return key opens the page.
   await app.press("role:button[Search]");
-  await app.type("label:Search Spotify", "kites");
-  await app.submit("label:Search Spotify");
+  await app.type("label:Search YouTube Music", "kites");
+  await app.submit("label:Search YouTube Music");
   await app.waitFor("role:button[Kites, The Quiet Fields]");
   expect(app.enabled("role:button[Go back]")).toBe(false);
   expect(app.enabled("role:button[Go forward]")).toBe(false);
@@ -74,7 +74,7 @@ test("the stack keeps the last few pages, so visiting many doesn't hold them all
   await app.wait(800);
   for (const page of ["Paper Lanterns", "Liked Songs", "Harbor Walk"]) {
     await app.press("role:button[Go back]");
-    await app.waitFor(`id:page-${page === "Liked Songs" ? "spotify:collection:tracks" : page === "Paper Lanterns" ? "spotify:album:paperlanterns" : "spotify:playlist:harborwalk"}`);
+    await app.waitFor(`id:page-${page === "Liked Songs" ? "ytm:collection:LM" : page === "Paper Lanterns" ? "ytm:album:paperlanterns" : "ytm:playlist:harborwalk"}`);
   }
   await app.press("role:button[Go back]");
   await app.waitFor("Good evening, Ada");
@@ -89,8 +89,6 @@ test("a collection's track plays, and the player bar shows it", async () => {
   await app.press("role:button[Slow River, The Quiet Fields]");
   await app.waitFor("id:player >> role:button[Pause]");
   expect(app.texts()).toContain("Slow River");
-  // Premium plays the chosen track: no free-tier notice.
-  expect(app.texts()).not.toContain("Spotify Free shuffles playlists. Premium lets you pick any song.");
 
   // The position moves on between the player's messages.
   await app.wait(1500);
@@ -100,29 +98,16 @@ test("a collection's track plays, and the player bar shows it", async () => {
   await app.waitFor("id:player >> role:button[Play]");
 });
 
-test("a free account hears that it shuffles, once a session", async () => {
+test("a free account plays the song it picks", async () => {
   const app = await desktop({ premium: false });
   await app.waitFor("Good evening, Ada");
   await app.press("role:button[Morning Static]");
-  await app.waitFor("role:button[First Light, The Quiet Fields]");
-  // The demo's free tier starts Morning Static at First Light: pick another
-  // song, so what plays is not what was picked, and the notice explains.
   await app.waitFor("role:button[Slow River, The Quiet Fields]");
   await app.press("role:button[Slow River, The Quiet Fields]");
-  const notice = "Spotify Free shuffles playlists. Premium lets you pick any song.";
-  await app.waitFor(notice);
+  await app.waitFor("id:player >> role:button[Pause]");
+  expect(app.texts()).toContain("Slow River");
   // Premium is a crown in the header, named by its label.
   await app.waitFor("role:button[Premium]");
-  // It stays visible: playing does not replace it with another message.
-  await app.wait(1000);
-  expect(app.texts()).toContain(notice);
-
-  await app.waitFor(notice, { state: "gone", timeout: 15000 });
-  await app.press("role:button[Neon Orchard]");
-  await app.waitFor("role:button[Glass Bees, Mira Vale]");
-  await app.press("role:button[Glass Bees, Mira Vale]");
-  await app.wait(500);
-  expect(app.texts()).not.toContain(notice);
 });
 
 test("signing out forgets the account's cache and goes back to Home", async () => {
@@ -141,7 +126,7 @@ test("signing out forgets the account's cache and goes back to Home", async () =
   await app.press("role:button[User menu: Ada]");
   await app.press("role:menuitem[Log out]");
   await app.waitUntil(() => asked.length === 1);
-  expect(asked).toEqual(["Log out of Spotify?"]);
+  expect(asked).toEqual(["Sign out of YouTube Music?"]);
   await app.wait(300);
   expect(app.shows("role:button[User menu: Ada]")).toBe(true);
 
@@ -166,7 +151,7 @@ test("signed out, playing asks to log in", async () => {
   await app.press("role:button[Neon Orchard, 2023 · Mira Vale]");
   await app.waitFor("role:button[Orchard, Mira Vale]");
   await app.press("role:button[Orchard, Mira Vale]");
-  await app.waitFor("Log in to Spotify to play music.");
+  await app.waitFor("Sign in to YouTube Music to play music.");
 });
 
 test("space plays and pauses, but types in the search field", async () => {
@@ -178,10 +163,10 @@ test("space plays and pauses, but types in the search field", async () => {
   await app.waitFor("id:player >> role:button[Pause]");
 
   await app.press("role:button[Search]");
-  await app.type("label:Search Spotify", "glass bees");
-  expect(app.value("label:Search Spotify")).toBe("glass bees");
+  await app.type("label:Search YouTube Music", "glass bees");
+  expect(app.value("label:Search YouTube Music")).toBe("glass bees");
   expect(app.shows("id:player >> role:button[Pause]")).toBe(true);
-  await app.submit("label:Search Spotify");
+  await app.submit("label:Search YouTube Music");
   await app.waitFor("role:button[Glass Bees, Mira Vale]");
 });
 
@@ -195,10 +180,10 @@ test("an ad shows its own title and a link to Premium; seeking is off", async ()
 
 test("the first launch shows the disclaimer once", async () => {
   const app = await desktop({}, {});
-  await app.waitFor("Spotish is an unofficial client and is not affiliated with Spotify.");
-  expect(app.shows("role:button[Get Spotify Premium]")).toBe(true);
+  await app.waitFor("YTMFast is an unofficial client and is not affiliated with YouTube or Google.");
+  expect(app.shows("role:button[Get YouTube Music Premium]")).toBe(true);
   await app.press("role:button[Start listening]");
-  await app.waitFor("Spotish is an unofficial client and is not affiliated with Spotify.", { state: "gone" });
+  await app.waitFor("YTMFast is an unofficial client and is not affiliated with YouTube or Google.", { state: "gone" });
   expect(app.storage()["firstRun:done"]).toBe("1");
 });
 

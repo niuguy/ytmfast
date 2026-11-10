@@ -90,7 +90,7 @@ function SearchBox(props: { onSearch: boolean; onDone: () => void }) {
           if (key === "Escape" && !props.onSearch) props.onDone();
         }}
         placeholder="What do you want to play?"
-        accessibilityLabel="Search Spotify"
+        accessibilityLabel="Search YouTube Music"
         returnKeyType="search"
         submitBehavior="submit"
         autoFocus

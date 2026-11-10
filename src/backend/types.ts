@@ -35,10 +35,10 @@ export interface PlayerState {
   album: string;
   /** The track's (or the ad's) artwork URL. */
   artwork: string;
-  /** `spotify:track:…`. */
+  /** `ytm:track:…`. */
   trackUri: string;
-  /** What plays: `spotify:playlist:…`, `spotify:album:…`,
-   * `spotify:collection:tracks`; empty when unknown. */
+  /** What plays: `ytm:playlist:…`, `ytm:album:…`,
+   * `ytm:collection:LM`; empty when unknown. */
   contextUri: string;
   playing: boolean;
   /** The position when the state was sampled. */
@@ -276,7 +276,7 @@ export function backendError(code: string, message: string): Error {
 
 // ---- Helpers on the models -----------------------------------------------
 
-/** What a `spotify:<kind>:<id>` URI names. */
+/** What a `ytm:<kind>:<id>` URI names. */
 export function kindOf(uri: string): string {
   return uri.split(":")[1] ?? "";
 }

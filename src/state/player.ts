@@ -11,7 +11,6 @@ import { Animated, cleanup, type CompositeAnimation, computed, createAnimatedVal
 import { EMPTY_PLAYER, type Item, type PlayerState, positionAt, type RepeatMode, type Track } from "../backend/types";
 import { backend } from "./engine";
 import { type MessageId, notify, report } from "./feedback";
-import { openPremium } from "./links";
 import { askToSignIn, ready, signedIn } from "./session";
 
 /** A control's change on its way: shown until the backend agrees, or a
@@ -326,24 +325,6 @@ export function toggleLike(): void {
   send({ liked }, () => backend.setLiked(liked), "likeFailed");
 }
 
-let freeNoticeShown = false;
-
-/** Tells a free account, once a session, that it shuffles, but only when
- * it did: when what plays after a pick is another song than the one picked
- * (the web player often plays the very song a free account picks). Waits
- * out an ad that plays first. */
-function noteIfShuffled(picked: string, tries = 6): void {
-  if (freeNoticeShown || player().premium !== false) return;
-  setTimeout(() => {
-    const now = player();
-    if (freeNoticeShown) return;
-    if ((now.ad || !now.trackUri) && tries > 0) return noteIfShuffled(picked, tries - 1);
-    if (now.ad || !now.trackUri || now.trackUri === picked) return;
-    freeNoticeShown = true;
-    notify("freeShuffles", { label: "Get Premium", run: openPremium });
-  }, 2500);
-}
-
 /** What shows the moment a track is picked: it is the one loaded and it
  * plays (its row marks it, the bar shows it), until the backend says what
  * actually plays. */
@@ -360,22 +341,17 @@ export function playCollection(uri: string): void {
   send({ contextUri: uri, playing: true }, () => backend.playContext(uri, null));
 }
 
-/** Plays `trackUri` within the collection `contextUri`; when a free
- * account gets another song (shuffled), it hears why, once. */
+/** Plays `trackUri` within the collection `contextUri` (YouTube Music
+ * plays a picked song on demand, free accounts too). */
 export function playFrom(contextUri: string, trackUri: string, track?: Track): void {
   if (!allowed()) return;
-  send(picked(trackUri, contextUri, track), () => backend.playContext(contextUri, trackUri).then(() => noteIfShuffled(trackUri)));
+  send(picked(trackUri, contextUri, track), () => backend.playContext(contextUri, trackUri));
 }
 
-/** Plays a track found outside a collection: Premium plays it on its own;
- * a free account plays its album, the track's context. */
+/** Plays a track found outside a collection: the song, then its radio. */
 export function playTrack(track: { uri: string; albumUri?: string } & Partial<Track>): void {
   const full = "name" in track && track.name ? (track as Track) : undefined;
-  if (player().premium === true || !track.albumUri) {
-    send(picked(track.uri, player().contextUri, full), () => backend.playTrack(track.uri));
-    return;
-  }
-  playFrom(track.albumUri, track.uri, full);
+  send(picked(track.uri, "", full), () => backend.playTrack(track.uri));
 }
 
 /** Plays a card: its collection, or the track it is. */

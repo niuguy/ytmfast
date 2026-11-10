@@ -8,7 +8,7 @@
 // disposed when a hot update makes a new one.
 
 import { type Accessor, signal } from "nsh";
-import { Spotify, type Health as NativeHealth, type Player as NativePlayer } from "ytmfast/native";
+import { YTMusic, type Health as NativeHealth, type Player as NativePlayer } from "ytmfast/native";
 import {
   type Backend,
   backendError,
@@ -32,7 +32,7 @@ const SLOT_KEY = "__ytmfastEngine";
 export function engineBackend(): EngineBackend {
   const g = globalThis as unknown as Record<string, EngineBackend | undefined>;
   g[SLOT_KEY]?.dispose();
-  const backend = new EngineBackend(new Spotify());
+  const backend = new EngineBackend(new YTMusic());
   g[SLOT_KEY] = backend;
   return backend;
 }
@@ -44,12 +44,14 @@ function health(native: NativeHealth | null | undefined): Health {
   };
 }
 
-/** The `spotify:` URI of what plays, from the web player's path
- * (`/playlist/<id>`, `/collection/tracks`). */
+/** The `ytm:` URI of what plays. The bridge reports the URI it was asked
+ * to play when it knows it, else the page's URL, whose `list=` names the
+ * queue's playlist (`LM` is Liked Music). */
 export function contextUriOf(href: string): string {
-  if (/\/collection\/tracks/.test(href)) return "spotify:collection:tracks";
-  const match = /\/(playlist|album|artist|show)\/([A-Za-z0-9]+)/.exec(href);
-  return match ? `spotify:${match[1]}:${match[2]}` : "";
+  if (href.startsWith("ytm:")) return href;
+  const match = /[?&]list=([A-Za-z0-9_-]+)/.exec(href);
+  if (!match) return "";
+  return match[1] === "LM" ? "ytm:collection:LM" : `ytm:playlist:${match[1]}`;
 }
 
 function player(native: NativePlayer | null | undefined): PlayerState {
@@ -94,28 +96,28 @@ export class EngineBackend implements Backend {
   readonly health: Accessor<Health>;
   readonly signedIn: Accessor<boolean | null>;
 
-  #spotify: Spotify;
+  #ytm: YTMusic;
   #stops: (() => void)[] = [];
   #player = signal<PlayerState>(EMPTY_PLAYER);
   #health = signal<Health>({ status: "starting", error: null });
   #signedIn = signal<boolean | null>(null);
   #disposed = false;
 
-  constructor(spotify: Spotify) {
-    this.#spotify = spotify;
+  constructor(ytm: YTMusic) {
+    this.#ytm = ytm;
     this.player = () => this.#player();
     this.health = () => this.#health();
     this.signedIn = () => this.#signedIn();
     // Each listener gets the current value on the next turn, then changes.
     this.#stops.push(
-      spotify.onPlayer((p) => this.#player.set(player(p))),
-      spotify.onHealth((h) => this.#health.set(health(h))),
-      spotify.onSignedIn((v) => this.#signedIn.set(v)),
+      ytm.onPlayer((p) => this.#player.set(player(p))),
+      ytm.onHealth((h) => this.#health.set(health(h))),
+      ytm.onSignedIn((v) => this.#signedIn.set(v)),
     );
   }
 
   onAuth(listener: () => void): () => void {
-    const stop = this.#spotify.onAuth(listener);
+    const stop = this.#ytm.onAuth(listener);
     this.#stops.push(stop);
     return stop;
   }
@@ -124,128 +126,128 @@ export class EngineBackend implements Backend {
     if (this.#disposed) return;
     this.#disposed = true;
     for (const stop of this.#stops.splice(0)) stop();
-    this.#spotify.dispose();
+    this.#ytm.dispose();
   }
 
   // ---- Data ----
 
   home(): Promise<Home> {
-    return call(() => this.#spotify.home());
+    return call(() => this.#ytm.home());
   }
 
   search(query: string): Promise<SearchResults> {
-    return call(() => this.#spotify.search(query));
+    return call(() => this.#ytm.search(query));
   }
 
   playlist(uri: string): Promise<Collection> {
-    return call(() => this.#spotify.playlist(uri));
+    return call(() => this.#ytm.playlist(uri));
   }
 
   album(uri: string): Promise<Collection> {
-    return call(() => this.#spotify.album(uri));
+    return call(() => this.#ytm.album(uri));
   }
 
   artist(uri: string): Promise<Collection> {
-    return call(() => this.#spotify.artist(uri));
+    return call(() => this.#ytm.artist(uri));
   }
 
   likedSongs(): Promise<Collection> {
-    return call(() => this.#spotify.likedSongs());
+    return call(() => this.#ytm.likedSongs());
   }
 
   library(): Promise<Library> {
-    return call(() => this.#spotify.library());
+    return call(() => this.#ytm.library());
   }
 
   async coverColors(imageUrl: string): Promise<string[]> {
     if (!imageUrl) return [];
-    const color = await call(() => this.#spotify.colors(imageUrl));
+    const color = await call(() => this.#ytm.colors(imageUrl));
     return color.palette.length ? color.palette : color.hex ? [color.hex] : [];
   }
 
   async lyrics(trackUri: string): Promise<Lyrics> {
-    const l = await call(() => this.#spotify.lyrics(trackUri));
+    const l = await call(() => this.#ytm.lyrics(trackUri));
     return { synced: l.synced, provider: l.provider, lines: l.lines.map((line) => ({ startMs: line.startMs, words: line.words })) };
   }
 
   async me(): Promise<Me> {
-    const me = await call(() => this.#spotify.me());
+    const me = await call(() => this.#ytm.me());
     return { id: me.id, name: me.name, image: me.image };
   }
 
   // ---- Controls ----
 
   toggle(): Promise<void> {
-    return call(() => this.#spotify.toggle());
+    return call(() => this.#ytm.toggle());
   }
 
   play(): Promise<void> {
-    return call(() => this.#spotify.play());
+    return call(() => this.#ytm.play());
   }
 
   pause(): Promise<void> {
-    return call(() => this.#spotify.pause());
+    return call(() => this.#ytm.pause());
   }
 
   next(): Promise<void> {
-    return call(() => this.#spotify.next());
+    return call(() => this.#ytm.next());
   }
 
   previous(): Promise<void> {
-    return call(() => this.#spotify.previous());
+    return call(() => this.#ytm.previous());
   }
 
   seek(ms: number): Promise<void> {
-    return call(() => this.#spotify.seek(ms));
+    return call(() => this.#ytm.seek(ms));
   }
 
   setVolume(volume: number): Promise<void> {
-    return call(() => this.#spotify.setVolume(volume));
+    return call(() => this.#ytm.setVolume(volume));
   }
 
   setShuffle(on: boolean): Promise<void> {
-    return call(() => this.#spotify.setShuffle(on));
+    return call(() => this.#ytm.setShuffle(on));
   }
 
   setRepeat(mode: RepeatMode): Promise<void> {
-    return call(() => this.#spotify.setRepeat(mode));
+    return call(() => this.#ytm.setRepeat(mode));
   }
 
   setLiked(on: boolean): Promise<void> {
-    return call(() => this.#spotify.setLiked(on));
+    return call(() => this.#ytm.setLiked(on));
   }
 
   setMuted(on: boolean): Promise<void> {
-    return call(() => this.#spotify.setMuted(on));
+    return call(() => this.#ytm.setMuted(on));
   }
 
   playContext(uri: string, trackUri: string | null): Promise<void> {
-    return call(() => this.#spotify.playContext(uri, trackUri));
+    return call(() => this.#ytm.playContext(uri, trackUri));
   }
 
   playTrack(uri: string): Promise<void> {
-    return call(() => this.#spotify.playTrack(uri));
+    return call(() => this.#ytm.playTrack(uri));
   }
 
   // ---- The account and the session ----
 
   async signIn(): Promise<void> {
-    this.#spotify.signIn();
+    this.#ytm.signIn();
   }
 
   async cancelSignIn(): Promise<void> {
-    this.#spotify.cancelSignIn();
+    this.#ytm.cancelSignIn();
   }
 
   async signOut(): Promise<void> {
-    this.#spotify.signOut();
+    this.#ytm.signOut();
   }
 
   async retry(): Promise<void> {
-    this.#spotify.retry();
+    this.#ytm.retry();
   }
 
   setBridge(source: string): void {
-    this.#spotify.setBridge(source);
+    this.#ytm.setBridge(source);
   }
 }

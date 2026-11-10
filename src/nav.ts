@@ -16,7 +16,7 @@ export type Route = { name: "home" } | { name: "search" } | { name: "collection"
 export const HOME: Route = { name: "home" };
 export const SEARCH: Route = { name: "search" };
 /** Liked Songs as a root: the phone's tab. */
-export const LIKED: Route = { name: "collection", uri: "spotify:collection:tracks" };
+export const LIKED: Route = { name: "collection", uri: "ytm:collection:LM" };
 
 /** The stack (made once: it keeps its pages across hot updates). */
 export const nav = createNavStack<Route>([HOME]);

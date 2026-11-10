@@ -86,12 +86,12 @@ function trackOf(album: AlbumSeed, index: number): Track {
   // A length between 2:30 and 4:50 that stays the same between runs.
   const seconds = 150 + ((index * 37 + album.id.length * 11) % 140);
   return {
-    uri: `spotify:track:${album.id}${index + 1}`,
+    uri: `ytm:track:${album.id}${index + 1}`,
     uid: `${album.id}-${index + 1}`,
     name: title,
     artists: album.artist.name,
     album: album.name,
-    albumUri: `spotify:album:${album.id}`,
+    albumUri: `ytm:album:${album.id}`,
     image: coverOf(album.id),
     durationMs: seconds * 1000,
     explicit: index === 3,
@@ -120,18 +120,18 @@ const PLAYLISTS: PlaylistSeed[] = [
 
 let LIKED: Track[] = pick([1, 9, 15, 4, 11, 20]);
 
-export const LIKED_URI = "spotify:collection:tracks";
+export const LIKED_URI = "ytm:collection:LM";
 
 function playlistItem(p: PlaylistSeed): Item {
-  return { uri: `spotify:playlist:${p.id}`, kind: "playlist", name: p.name, subtitle: "Playlist · Demo", image: coverOf(p.id) };
+  return { uri: `ytm:playlist:${p.id}`, kind: "playlist", name: p.name, subtitle: "Playlist · Demo", image: coverOf(p.id) };
 }
 
 function albumItem(a: AlbumSeed): Item {
-  return { uri: `spotify:album:${a.id}`, kind: "album", name: a.name, subtitle: `${a.year} · ${a.artist.name}`, image: coverOf(a.id) };
+  return { uri: `ytm:album:${a.id}`, kind: "album", name: a.name, subtitle: `${a.year} · ${a.artist.name}`, image: coverOf(a.id) };
 }
 
 function artistItem(a: ArtistSeed): Item {
-  return { uri: `spotify:artist:${a.id}`, kind: "artist", name: a.name, subtitle: "Artist", image: coverOf(a.id) };
+  return { uri: `ytm:artist:${a.id}`, kind: "artist", name: a.name, subtitle: "Artist", image: coverOf(a.id) };
 }
 
 /** Every item the demo knows, for search. */

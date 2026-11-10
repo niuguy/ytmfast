@@ -734,7 +734,7 @@ mod capture {
     }
 
     /// SIGTERM to `parec` when the thread that started it ends, however
-    /// the app ends (as the browser gets, `spotify::chrome`).
+    /// the app ends (as the browser gets, `ytmusic::chrome`).
     fn die_with_parent(command: &mut Command) {
         use std::os::unix::process::CommandExt;
         // SAFETY: getpid is always safe.

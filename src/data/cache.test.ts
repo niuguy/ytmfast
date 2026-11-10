@@ -35,11 +35,11 @@ test("a query shows the cache at once, then the loaded value", async () => {
 test("a miss loads, with nothing to show meanwhile", async () => {
   await hydrate();
   clearMemory();
-  const source = signal<CacheSource | null>({ account: "acct-a", key: "spotify:playlist:x", epoch: 0 });
+  const source = signal<CacheSource | null>({ account: "acct-a", key: "ytm:playlist:x", epoch: 0 });
   const query = cachedQuery(source, async (key) => ({ key }));
   expect(query.data()).toBeUndefined();
   await until(() => query.data() !== undefined);
-  expect(query.data()).toEqual({ key: "spotify:playlist:x" });
+  expect(query.data()).toEqual({ key: "ytm:playlist:x" });
 });
 
 test("one account never sees another's entries", async () => {

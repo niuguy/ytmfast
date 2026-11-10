@@ -325,12 +325,12 @@ mod tests {
         assert!(call(Command::SetRepeat(Repeat::Track)).contains(r#".call("setRepeat", ["track"])"#));
         assert!(call(Command::SetLiked(true)).contains(r#".call("setLiked", [true])"#));
         assert!(
-            call(Command::PlayContext { uri: "spotify:album:a".into(), track_uri: None })
-                .contains(r#".call("playContext", ["spotify:album:a",null])"#)
+            call(Command::PlayContext { uri: "ytm:album:a".into(), track_uri: None })
+                .contains(r#".call("playContext", ["ytm:album:a",null])"#)
         );
         assert!(
-            call(Command::PlayContext { uri: "spotify:album:a".into(), track_uri: Some("spotify:track:t".into()) })
-                .contains(r#"["spotify:album:a","spotify:track:t"]"#)
+            call(Command::PlayContext { uri: "ytm:album:a".into(), track_uri: Some("ytm:track:t".into()) })
+                .contains(r#"["ytm:album:a","ytm:track:t"]"#)
         );
         // A script can't break out of the string.
         assert!(call(Command::PlayTrack("x\"); alert(1); (\"".into())).contains(r#"["x\"); alert(1); (\""]"#));

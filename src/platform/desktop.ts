@@ -149,11 +149,11 @@ export function installDesktopShell(opts: DesktopShellOptions): DesktopShell {
     const showNowPlaying = opts.showNowPlaying;
     Tray.set({
       icon: trayIcon(ink),
-      tooltip: opts.title().trim() ? `Spotish: ${title}` : "Spotish",
+      tooltip: opts.title().trim() ? `YTMFast: ${title}` : "YTMFast",
       onClick: showWindow,
       menu: [
         // The app, on its own.
-        { label: "Open Spotish", onSelect: showWindow },
+        { label: "Open YTMFast", onSelect: showWindow },
         { type: "separator" },
         // What plays, and its controls.
         { label: title, disabled: true },

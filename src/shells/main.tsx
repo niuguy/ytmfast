@@ -27,7 +27,7 @@ function page(route: Route) {
 function unavailableDetail(): string | undefined {
   const error = health().error;
   if (error?.code === "E_PROFILE_IN_USE") {
-    return "Spotish's browser profile is in use by another process. Quit the other Spotish and retry.";
+    return "YTMFast's browser profile is in use by another process. Quit the other YTMFast and retry.";
   }
   return undefined;
 }
@@ -37,7 +37,7 @@ export function MainStack(props: { class?: string }) {
     <View class={`min-h-0 flex-1 ${props.class ?? ""}`}>
       <If
         when={health().status !== "failed"}
-        else={<ErrorState message="Spotify isn't available" detail={unavailableDetail()} onRetry={retry} />}
+        else={<ErrorState message="YouTube Music isn't available" detail={unavailableDetail()} onRetry={retry} />}
       >
         <NavStack state={nav} class="flex-1" testID="main">
           {(route) => page(route)}

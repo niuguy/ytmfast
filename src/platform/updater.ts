@@ -1,6 +1,6 @@
 // Updates: a newer build of the app's TSX (an OTA package, run from the
 // next start) and a newer app (a new binary, for Rust or NSH runtime
-// changes), from the GitHub Releases of huacnlee/spotish (nsh.json
+// changes), from the GitHub Releases named in nsh.json (nsh.json
 // "updater"). Quiet: a failed check is logged, and the next check tries
 // again.
 //
@@ -79,7 +79,7 @@ export async function checkForUpdates(opts: UpdateOptions): Promise<void> {
     if (pkg) {
       await downloadPackage();
       if (canRestart) {
-        opts.notify(`Spotish ${pkg.version} is ready.`, {
+        opts.notify(`YTMFast ${pkg.version} is ready.`, {
           label: "Restart",
           run: () => void restartToPackage().catch((e: unknown) => console.warn("update: restart failed:", e)),
         });
@@ -89,12 +89,12 @@ export async function checkForUpdates(opts: UpdateOptions): Promise<void> {
     const app = await checkForUpdate();
     if (!app) return;
     if (app.canInstall) {
-      opts.notify(`Spotish ${app.version} is available.`, {
+      opts.notify(`YTMFast ${app.version} is available.`, {
         label: "Update",
         run: () => void installApp(opts),
       });
     } else {
-      opts.notify(`Spotish ${app.version} is available.`, {
+      opts.notify(`YTMFast ${app.version} is available.`, {
         label: "Download",
         run: () => void openUrl(app.url).catch(() => undefined),
       });

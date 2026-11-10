@@ -65,7 +65,7 @@ pub fn answer(command: &Command) -> Answer {
         Command::Library => {
             let home = parse(HOME);
             let mut items = vec![json!({
-                "uri": "spotify:collection:tracks", "kind": "collection", "name": "Liked Songs",
+                "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Songs",
                 "subtitle": "12 songs", "image": ""
             })];
             for section in home["sections"].as_array().into_iter().flatten() {
@@ -83,7 +83,7 @@ pub fn answer(command: &Command) -> Answer {
         Command::LikedSongs => {
             let mut album = parse(ALBUM);
             album["header"] = json!({
-                "uri": "spotify:collection:tracks", "kind": "collection", "name": "Liked Songs",
+                "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Songs",
                 "subtitle": "12 songs", "image": "", "description": ""
             });
             Ok(album)

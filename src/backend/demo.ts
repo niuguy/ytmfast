@@ -23,7 +23,7 @@ import {
 
 /** How the demo starts. */
 export interface DemoOptions {
-  /** Premium (default false: a free account, which shuffles and hears ads). */
+  /** Premium (default false: a free account, which hears ads). */
   premium?: boolean;
   /** Signed in at the start (default true). */
   signedIn?: boolean;
@@ -219,14 +219,9 @@ export class DemoBackend implements Backend {
     if (!found || found.tracks.length === 0) throw backendError("E_NOT_FOUND", `no demo collection ${uri}`);
     this.#queue = found.tracks;
     const at = trackUri ? found.tracks.findIndex((t) => t.uri === trackUri) : -1;
-    if (this.#premium()) {
-      this.#index = Math.max(0, at);
-      this.#load(uri, { shuffle: this.#player().shuffle });
-    } else {
-      // Spotify Free shuffles a playlist rather than playing a chosen track.
-      this.#index = (uri.length * 7) % found.tracks.length;
-      this.#load(uri, { shuffle: true });
-    }
+    // YouTube Music plays the chosen song, free accounts too.
+    this.#index = Math.max(0, at);
+    this.#load(uri, { shuffle: this.#player().shuffle });
   }
 
   async playTrack(uri: string): Promise<void> {
@@ -371,7 +366,7 @@ export class DemoBackend implements Backend {
 }
 
 function findTrack(uri: string): Track | undefined {
-  for (const uriOf of [fixtures.LIKED_URI, "spotify:album:paperlanterns", "spotify:album:neonorchard", "spotify:album:saltlines"]) {
+  for (const uriOf of [fixtures.LIKED_URI, "ytm:album:paperlanterns", "ytm:album:neonorchard", "ytm:album:saltlines"]) {
     const found = fixtures.collection(uriOf)?.tracks.find((t) => t.uri === uri);
     if (found) return found;
   }

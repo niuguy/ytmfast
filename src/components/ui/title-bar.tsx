@@ -54,7 +54,7 @@ export function TitleBar(props: { brand?: boolean; children?: JSX.Element }) {
       >
         <If when={props.brand !== false}>
           <Logo size={18} />
-          <Text class="mr-4 text-sm font-semibold text-foreground">Spotish</Text>
+          <Text class="mr-4 text-sm font-semibold text-foreground">YTMFast</Text>
         </If>
         {props.children}
       </View>
