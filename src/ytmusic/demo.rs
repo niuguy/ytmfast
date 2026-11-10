@@ -1,5 +1,5 @@
 //! A session with no browser, answering from data recorded from the web
-//! player: what the tests run on, and `SPOTISH_DEMO=1` shows (the look of
+//! player: what the tests run on, and `YTMFAST_DEMO=1` shows (the look of
 //! the app without an account).
 
 use std::thread::JoinHandle;
@@ -154,7 +154,7 @@ pub fn session() -> (Session, watch::Receiver<Snapshot>, JoinHandle<()>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spotify::{
+    use crate::ytmusic::{
         bridge::decode,
         model::{Collection, Home, Library, Me, SearchResults},
     };

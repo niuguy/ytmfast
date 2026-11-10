@@ -1,6 +1,6 @@
 //! The one-time import of an existing browser's Spotify login
-//! (`SPOTISH_PROFILE`): its cookies, the key they are encrypted with
-//! (`Local State`) and its Widevine component are copied into Spotish's own
+//! (`YTMFAST_PROFILE`): its cookies, the key they are encrypted with
+//! (`Local State`) are copied into Spotish's own
 //! profile, once.
 //!
 //! "Once" is a marker file in the data directory. The import runs only while
@@ -21,7 +21,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-use super::{chrome, paths::Paths};
+use super::paths::Paths;
 
 /// Where Chromium keeps the cookie database inside a profile, newest first.
 const COOKIE_DBS: [&str; 2] = ["Default/Network/Cookies", "Default/Cookies"];
@@ -33,10 +33,10 @@ pub enum Outcome {
     Settled,
     /// Spotish's profile has cookies of its own (the marker is written now).
     HasOwnLogin,
-    /// No `SPOTISH_PROFILE` to import from.
+    /// No `YTMFAST_PROFILE` to import from.
     NoSource,
     /// The source has no cookie database; nothing was marked, so a later
-    /// start with a fixed `SPOTISH_PROFILE` tries again.
+    /// start with a fixed `YTMFAST_PROFILE` tries again.
     NothingToImport,
     /// The login was imported, and the marker written.
     Imported,
@@ -79,7 +79,7 @@ pub fn import_once(paths: &Paths, source: Option<&Path>) -> Outcome {
     }
     let Some(source) = source else { return Outcome::NoSource };
     let Some(from) = COOKIE_DBS.iter().find(|db| source.join(db).is_file()) else {
-        log::warn!("SPOTISH_PROFILE={}: no cookies found to reuse", source.display());
+        log::warn!("YTMFAST_PROFILE={}: no cookies found to reuse", source.display());
         return Outcome::NothingToImport;
     };
     let result = (|| -> Result<(), String> {
@@ -89,15 +89,12 @@ pub fn import_once(paths: &Paths, source: Option<&Path>) -> Outcome {
         if local_state.is_file() {
             copy_atomically(&local_state, &target.join("Local State")).map_err(|e| format!("Local State: {e}"))?;
         }
-        if !chrome::has_widevine(&target) {
-            let _ = chrome::copy_widevine_from(&source.join("WidevineCdm"), &target);
-        }
         Ok(())
     })();
     match result {
         Ok(()) => {
             settle(paths, "imported");
-            log::info!("imported the Spotify login from {}", source.display());
+            log::info!("imported the YouTube login from {}", source.display());
             Outcome::Imported
         }
         Err(e) => {
@@ -107,9 +104,9 @@ pub fn import_once(paths: &Paths, source: Option<&Path>) -> Outcome {
     }
 }
 
-/// `SPOTISH_PROFILE`, when set.
+/// `YTMFAST_PROFILE`, when set.
 pub fn source_from_env() -> Option<PathBuf> {
-    std::env::var_os("SPOTISH_PROFILE").filter(|p| !p.is_empty()).map(PathBuf::from)
+    std::env::var_os("YTMFAST_PROFILE").filter(|p| !p.is_empty()).map(PathBuf::from)
 }
 
 /// Copies the SQLite database `from` to `to` consistently: a backup into a
@@ -118,7 +115,7 @@ pub fn source_from_env() -> Option<PathBuf> {
 pub fn copy_database(from: &Path, to: &Path) -> Result<(), String> {
     let dir = to.parent().ok_or("no parent directory")?;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let staging = sibling(to, "spotish-staging");
+    let staging = sibling(to, "ytmfast-staging");
     remove_with_sidecars(&staging);
     // A running browser may hold its database locked (Chromium uses
     // exclusive locking); then back up a private copy of the database and its
@@ -126,7 +123,7 @@ pub fn copy_database(from: &Path, to: &Path) -> Result<(), String> {
     if let Err(live) = backup(from, &staging, false) {
         log::info!("backing up {} directly failed ({live}); copying it first", from.display());
         remove_with_sidecars(&staging);
-        let scratch = sibling(to, "spotish-scratch");
+        let scratch = sibling(to, "ytmfast-scratch");
         remove_with_sidecars(&scratch);
         let copied = (|| -> Result<(), String> {
             std::fs::copy(from, &scratch).map_err(|e| e.to_string())?;
@@ -187,7 +184,7 @@ fn copy_atomically(from: &Path, to: &Path) -> io::Result<()> {
     if let Some(parent) = to.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let staging = sibling(to, "spotish-staging");
+    let staging = sibling(to, "ytmfast-staging");
     std::fs::copy(from, &staging)?;
     std::fs::rename(&staging, to)
 }
@@ -215,7 +212,7 @@ mod tests {
 
     /// A fresh directory under `TMPDIR` (never a fixed `/tmp` path).
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("spotish-import-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ytmfast-import-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -295,7 +292,7 @@ mod tests {
         copy_database(&from, &to).unwrap();
         assert!(!with_suffix(&to, "-wal").exists() || read_cookie(&to) == "fresh");
         assert_eq!(read_cookie(&to), "fresh");
-        assert!(!sibling(&to, "spotish-staging").exists());
+        assert!(!sibling(&to, "ytmfast-staging").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

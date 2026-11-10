@@ -21,7 +21,7 @@
 // app's window exists (SMTC needs one).
 
 import { cleanup, effect } from "nsh";
-import { MediaControls } from "spotish/native";
+import { MediaControls } from "ytmfast/native";
 
 /** What the media controls read from the player (store.player() fits). */
 export interface MediaPlayerView {

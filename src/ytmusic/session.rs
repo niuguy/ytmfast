@@ -82,7 +82,7 @@ impl Session {
         let (out, state) = watch::channel(Snapshot::default());
         let me = requests.clone();
         let thread = std::thread::Builder::new()
-            .name("spotish-session".into())
+            .name("ytmfast-session".into())
             .spawn(move || {
                 Runner {
                     queue,
@@ -100,7 +100,7 @@ impl Session {
     }
 
     /// A session that answers from `answer` with no browser (tests, and
-    /// `SPOTISH_DEMO=1`): ready at once, signed in. `control` applies a
+    /// `YTMFAST_DEMO=1`): ready at once, signed in. `control` applies a
     /// control to the player's state, and says whether it changed it.
     pub fn fake(
         answer: impl Fn(&Command) -> Answer + Send + 'static,
@@ -110,7 +110,7 @@ impl Session {
         let (requests, queue) = mpsc::channel::<Request>();
         let (out, state) = watch::channel(Snapshot { player, health: Health::ready(), signed_in: Some(true), auth: 0 });
         let thread = std::thread::Builder::new()
-            .name("spotish-fake-session".into())
+            .name("ytmfast-fake-session".into())
             .spawn(move || {
                 while let Ok(request) = queue.recv() {
                     match request {
@@ -262,16 +262,12 @@ struct Live {
     slots: HashMap<Coalesce, Slot>,
     cookie_check: Option<Instant>,
     last_cookie_check: Option<Instant>,
-    last_widevine_check: Instant,
     playing: bool,
-    widevine_at_start: bool,
-    widevine_reported: bool,
-    started: Instant,
     version_warned: bool,
 }
 
 impl Live {
-    fn new(cdp: Arc<Cdp>, page: Page, widevine_at_start: bool) -> Live {
+    fn new(cdp: Arc<Cdp>, page: Page) -> Live {
         Live {
             cdp,
             page,
@@ -284,11 +280,7 @@ impl Live {
             slots: HashMap::new(),
             cookie_check: None,
             last_cookie_check: None,
-            last_widevine_check: Instant::now(),
             playing: false,
-            widevine_at_start,
-            widevine_reported: false,
-            started: Instant::now(),
             version_warned: false,
         }
     }
@@ -320,8 +312,6 @@ fn reply_all(replies: Vec<oneshot::Sender<Answer>>, answer: Answer) {
 
 /// How often the session cookie is checked.
 const COOKIE_EVERY: Duration = Duration::from_secs(8);
-/// How long a browser without Widevine may run before that is reported.
-const WIDEVINE_GRACE: Duration = Duration::from_secs(120);
 /// A sign-in window that ends sooner did not let anyone sign in.
 const SIGN_IN_MIN: Duration = Duration::from_secs(2);
 
@@ -383,7 +373,7 @@ impl Runner {
     fn no_browser() -> StartError {
         StartError::permanent(EngineError::new(
             ErrorCode::NoBrowser,
-            "Spotish plays through Chromium, Google Chrome, Brave or Microsoft Edge, and none is installed. Install one, or set SPOTISH_BROWSER to its path.",
+            "YTMFast plays through Chromium, Google Chrome, Brave or Microsoft Edge, and none is installed. Install one, or set YTMFAST_BROWSER to its path.",
         ))
     }
 
@@ -528,8 +518,6 @@ impl Runner {
         }
         let outcome = import::import_once(&self.paths, import::source_from_env().as_deref());
         log::debug!("login import: {outcome:?}");
-        chrome::adopt_widevine(&profile);
-        let widevine_at_start = chrome::has_widevine(&profile) || chrome::bundles_widevine(&binary);
         log::info!("player: starting {} (headless)", binary.display());
         self.health(Health::starting());
         let (events, heard) = mpsc::channel();
@@ -541,7 +529,7 @@ impl Runner {
             Ok(page) => page,
             Err(failure) => return self.failed(failure),
         };
-        let mut live = Live::new(cdp, page, widevine_at_start);
+        let mut live = Live::new(cdp, page);
         let next = self.run_player(&mut live, &heard, &mut browser);
         let why = match &next {
             Next::SignIn => EngineError::new(ErrorCode::NotReady, "signing in"),
@@ -593,7 +581,7 @@ impl Runner {
         (|| -> Result<Option<String>, CdpError> {
             call("Page.enable", json!({}))?;
             call("Runtime.enable", json!({}))?;
-            call("Runtime.addBinding", json!({ "name": "spotishEvent" }))?;
+            call("Runtime.addBinding", json!({ "name": "ytmfastEvent" }))?;
             let script = call("Page.addScriptToEvaluateOnNewDocument", json!({ "source": self.bridge }))?;
             if let Some(agent) = version["userAgent"].as_str() {
                 call(
@@ -643,7 +631,7 @@ impl Runner {
                     let _ = cdp.call(
                         None,
                         "Storage.clearDataForOrigin",
-                        json!({ "origin": "https://open.spotify.com", "storageTypes": "all" }),
+                        json!({ "origin": chrome::PLAYER_ORIGIN, "storageTypes": "all" }),
                         t,
                     );
                     // Never import the old login again.
@@ -707,26 +695,6 @@ impl Runner {
             // The cookie check's own deadline answers it; this is a guard.
             if live.cookie_check.is_some_and(|at| at.elapsed() > Duration::from_secs(10)) {
                 live.cookie_check = None;
-            }
-
-            if !live.widevine_at_start && live.last_widevine_check.elapsed() >= Duration::from_secs(8) {
-                live.last_widevine_check = Instant::now();
-                let profile = self.paths.profile();
-                // The browser downloaded Widevine for a new profile: it loads
-                // it at the next start, so restart once nothing plays.
-                if chrome::has_widevine(&profile) {
-                    if !live.playing {
-                        log::info!("Widevine is installed; starting the player again to load it");
-                        Runner::close(live, browser);
-                        return Next::Player;
-                    }
-                } else if !live.widevine_reported && live.started.elapsed() >= WIDEVINE_GRACE {
-                    live.widevine_reported = true;
-                    self.health(Health::failed(EngineError::new(
-                        ErrorCode::NoWidevine,
-                        "The browser has no Widevine component, so Spotify cannot play. Install Google Chrome, or open Spotify once in your Chromium so it downloads Widevine.",
-                    )));
-                }
             }
         }
     }
@@ -900,7 +868,7 @@ impl Runner {
     fn event(&mut self, live: &mut Live, event: CdpEvent) -> Option<Next> {
         let ours = event.session.as_deref() == Some(live.page.session.as_str());
         match event.method.as_str() {
-            "Runtime.bindingCalled" if ours && event.params["name"] == "spotishEvent" => {
+            "Runtime.bindingCalled" if ours && event.params["name"] == "ytmfastEvent" => {
                 let payload = event.params["payload"].as_str().unwrap_or("");
                 match bridge::parse_message(payload) {
                     Ok(Message::Ready) => {
@@ -997,12 +965,16 @@ fn evaluation(command: &Command, result: Result<Value, CdpError>) -> Evaluation 
     }
 }
 
-/// Whether `Storage.getCookies`'s answer has Spotify's session cookie.
+/// The cookies a signed-in Google account sets on YouTube (the page also
+/// signs its API requests with their hash, `SAPISIDHASH`).
+const SESSION_COOKIES: [&str; 2] = ["SAPISID", "__Secure-3PAPISID"];
+
+/// Whether `Storage.getCookies`'s answer has YouTube's session cookie.
 fn has_session_cookie(answer: &Value) -> bool {
     answer["cookies"].as_array().is_some_and(|cookies| {
         cookies.iter().any(|c| {
-            c["name"] == "sp_dc"
-                && c["domain"].as_str().is_some_and(|d| d.trim_start_matches('.').ends_with("spotify.com"))
+            c["name"].as_str().is_some_and(|n| SESSION_COOKIES.contains(&n))
+                && c["domain"].as_str().is_some_and(|d| d.trim_start_matches('.').ends_with("youtube.com"))
                 && !c["value"].as_str().unwrap_or("").is_empty()
         })
     })
@@ -1086,10 +1058,10 @@ mod tests {
     #[test]
     fn finds_the_session_cookie() {
         let cookies = |name: &str, domain: &str, value: &str| json!({ "cookies": [{ "name": name, "domain": domain, "value": value }] });
-        assert!(has_session_cookie(&cookies("sp_dc", ".spotify.com", "x")));
-        assert!(!has_session_cookie(&cookies("sp_dc", ".spotify.com", "")));
-        assert!(!has_session_cookie(&cookies("sp_dc", ".example.com", "x")));
-        assert!(!has_session_cookie(&cookies("sp_t", ".spotify.com", "x")));
+        assert!(has_session_cookie(&cookies("SAPISID", ".youtube.com", "x")));
+        assert!(!has_session_cookie(&cookies("SAPISID", ".youtube.com", "")));
+        assert!(!has_session_cookie(&cookies("SAPISID", ".example.com", "x")));
+        assert!(!has_session_cookie(&cookies("VISITOR_INFO1_LIVE", ".youtube.com", "x")));
         assert!(!has_session_cookie(&json!({})));
     }
 
@@ -1154,13 +1126,13 @@ mod tests {
                 queue,
                 me,
                 out,
-                paths: Paths::at(std::env::temp_dir().join("spotish-rig-unused")),
+                paths: Paths::at(std::env::temp_dir().join("ytmfast-rig-unused")),
                 bridge: String::new(),
                 backoff: Backoff::default(),
                 next_token: 1,
             };
             let page = Page { session: "S".into(), target: "T".into(), script: None };
-            let live = Live::new(Arc::new(cdp), page, true);
+            let live = Live::new(Arc::new(cdp), page);
             Rig { runner, live, to_browser, from_browser, events, state }
         }
 
@@ -1196,7 +1168,7 @@ mod tests {
         /// The page posts `payload` through the binding.
         fn post(&mut self, payload: &str) {
             let event = json!({ "method": "Runtime.bindingCalled", "sessionId": "S",
-                "params": { "name": "spotishEvent", "payload": payload } });
+                "params": { "name": "ytmfastEvent", "payload": payload } });
             self.page_event(event);
         }
 
@@ -1272,7 +1244,7 @@ mod tests {
         rig.page_event(
             json!({ "method": "Page.frameNavigated", "sessionId": "S", "params": { "frame": { "id": "F" } } }),
         );
-        assert_eq!(rig.state.borrow().health.status, crate::spotify::HealthStatus::Starting);
+        assert_eq!(rig.state.borrow().health.status, crate::ytmusic::HealthStatus::Starting);
         rig.page_event(json!({ "method": "Runtime.executionContextCreated", "sessionId": "S",
             "params": { "context": { "id": 2, "auxData": { "isDefault": true, "frameId": "F" } } } }));
         let again = rig.sent();
@@ -1290,7 +1262,7 @@ mod tests {
         assert_eq!(check["method"], "Storage.getCookies");
         rig.answer(
             &check["id"],
-            json!({ "result": { "cookies": [{ "name": "sp_dc", "domain": ".spotify.com", "value": "x" }] } }),
+            json!({ "result": { "cookies": [{ "name": "SAPISID", "domain": ".youtube.com", "value": "x" }] } }),
         );
         assert_eq!(rig.state.borrow().signed_in, Some(true));
         rig.runner.check_cookies(&mut rig.live);
@@ -1331,8 +1303,8 @@ mod tests {
         block(session.command(Command::Play)).unwrap();
         assert!(state.has_changed().unwrap());
         assert!(state.borrow_and_update().player.playing);
-        block(session.command(Command::SetRepeat(crate::spotify::Repeat::Track))).unwrap();
-        assert_eq!(state.borrow().player.repeat, crate::spotify::Repeat::Track);
+        block(session.command(Command::SetRepeat(crate::ytmusic::Repeat::Track))).unwrap();
+        assert_eq!(state.borrow().player.repeat, crate::ytmusic::Repeat::Track);
         assert!(session.shutdown(Duration::from_secs(2)));
         thread.join().unwrap();
         // After the end, commands fail instead of hanging.

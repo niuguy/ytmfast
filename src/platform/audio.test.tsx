@@ -2,7 +2,7 @@
 // levels stay at zero and nothing is recorded. (The analysis itself is
 // tested in Rust: src/audio.rs.)
 import { describe, expect, test } from "nsh/test";
-import { AudioMeter } from "spotish/native";
+import { AudioMeter } from "ytmfast/native";
 
 import { audioLevels, ZERO_FRAME } from "./audio";
 

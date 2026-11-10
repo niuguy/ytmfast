@@ -3,10 +3,10 @@
 //! directory per OS, from the `dirs` crate:
 //!
 //! - Linux: `$XDG_DATA_HOME/spotish` (`~/.local/share/spotish`)
-//! - macOS: `~/Library/Application Support/dev.huacnlee.spotish`
+//! - macOS: `~/Library/Application Support/dev.ytmfast`
 //! - Windows: `%LOCALAPPDATA%\Spotish`
 //!
-//! `SPOTISH_DATA_DIR` overrides it (tests, a second instance).
+//! `YTMFAST_DATA_DIR` overrides it (tests, a second instance).
 
 use std::path::{Path, PathBuf};
 
@@ -20,10 +20,10 @@ pub struct Paths {
 impl Paths {
     /// The platform's data directory for Spotish.
     pub fn platform() -> Paths {
-        if let Some(dir) = std::env::var_os("SPOTISH_DATA_DIR").filter(|d| !d.is_empty()) {
+        if let Some(dir) = std::env::var_os("YTMFAST_DATA_DIR").filter(|d| !d.is_empty()) {
             return Paths::at(PathBuf::from(dir));
         }
-        Paths::at(default_data_dir().unwrap_or_else(|| PathBuf::from(".spotish")))
+        Paths::at(default_data_dir().unwrap_or_else(|| PathBuf::from(".ytmfast")))
     }
 
     /// Paths under `data`.
@@ -55,17 +55,17 @@ impl Paths {
 
 #[cfg(target_os = "macos")]
 fn default_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("dev.huacnlee.spotish"))
+    dirs::data_dir().map(|d| d.join("dev.ytmfast"))
 }
 
 #[cfg(target_os = "windows")]
 fn default_data_dir() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|d| d.join("Spotish"))
+    dirs::data_local_dir().map(|d| d.join("YTMFast"))
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn default_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("spotish"))
+    dirs::data_dir().map(|d| d.join("ytmfast"))
 }
 
 /// The user's home, for well-known browser locations.
@@ -84,19 +84,19 @@ mod tests {
 
     #[test]
     fn lays_out_the_data_dir() {
-        let paths = Paths::at("/data/spotish");
-        assert_eq!(paths.profile(), PathBuf::from("/data/spotish/browser"));
-        assert_eq!(paths.browser_log(), PathBuf::from("/data/spotish/logs/chromium.log"));
-        assert_eq!(paths.import_marker(), PathBuf::from("/data/spotish/login-import.done"));
+        let paths = Paths::at("/data/ytmfast");
+        assert_eq!(paths.profile(), PathBuf::from("/data/ytmfast/browser"));
+        assert_eq!(paths.browser_log(), PathBuf::from("/data/ytmfast/logs/chromium.log"));
+        assert_eq!(paths.import_marker(), PathBuf::from("/data/ytmfast/login-import.done"));
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn keeps_the_linux_location() {
         // The profile stays where earlier versions kept it.
-        if std::env::var_os("SPOTISH_DATA_DIR").is_none() {
+        if std::env::var_os("YTMFAST_DATA_DIR").is_none() {
             let data = Paths::platform().data;
-            assert!(data.ends_with("spotish"), "{}", data.display());
+            assert!(data.ends_with("ytmfast"), "{}", data.display());
         }
     }
 }

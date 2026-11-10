@@ -213,7 +213,7 @@ mod watch {
                 log::debug!("system theme: not watching {}: {e}", theme.display());
             }
             std::thread::Builder::new()
-                .name("spotish-theme-watch".into())
+                .name("ytmfast-theme-watch".into())
                 .spawn(move || {
                     // Ends when the watcher (and so `tx`) is dropped.
                     while rx.recv().is_ok() {
@@ -293,7 +293,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn reports_a_theme_switch_once() {
-        let current = std::env::temp_dir().join(format!("spotish-theme-watch-{}", std::process::id()));
+        let current = std::env::temp_dir().join(format!("ytmfast-theme-watch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&current);
         std::fs::create_dir_all(current.join("theme")).unwrap();
         std::fs::write(current.join("theme/colors.toml"), ADVENTURE).unwrap();

@@ -34,10 +34,10 @@ static ENGINE: OnceLock<Engine> = OnceLock::new();
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(8);
 
 /// The engine, started on first call: the real web player, or the recorded
-/// demo when `SPOTISH_DEMO` is set (and not `0`).
+/// demo when `YTMFAST_DEMO` is set (and not `0`).
 pub fn engine() -> &'static Engine {
     ENGINE.get_or_init(|| {
-        let demo = std::env::var_os("SPOTISH_DEMO").is_some_and(|v| v != "0");
+        let demo = std::env::var_os("YTMFAST_DEMO").is_some_and(|v| v != "0");
         let (session, state, thread) = if demo { demo::session() } else { Session::start(Paths::platform()) };
         // SAFETY: registering a plain `extern "C" fn` with the C runtime.
         unsafe {

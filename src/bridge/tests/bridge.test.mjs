@@ -279,7 +279,7 @@ test("install: top frame only, idempotent, replaces and disposes", () => {
   const frame = fakeWindow(h("body", {}));
   frame.top = {};
   assert.equal(B.install(frame, options(frame)), null);
-  assert.equal(frame.__spotish, undefined);
+  assert.equal(frame.__ytmfast, undefined);
 
   const pageFetch = win.fetch;
   const first = B.install(win, { now: () => win.clock.t });
@@ -288,7 +288,7 @@ test("install: top frame only, idempotent, replaces and disposes", () => {
     assert.notEqual(win.fetch, pageFetch, "fetch is wrapped");
     const second = B.install(win, { now: () => win.clock.t });
     assert.notEqual(first, second);
-    assert.equal(win.__spotish, second);
+    assert.equal(win.__ytmfast, second);
     assert.equal(win.intervals.size, 1, "the first bridge's timer is cleared");
     assert.notEqual(win.fetch, pageFetch);
     // One layer: the replaced wrapper wraps the page's own fetch, not the old wrapper.
@@ -403,14 +403,14 @@ test("hot swap: dispose, delete, install again posts ready again", async () => {
   assert.equal(win.posted.filter((m) => m.type === "ready").length, 1);
   // What the engine evaluates before the new source.
   try {
-    win.__spotish && win.__spotish.dispose && win.__spotish.dispose();
+    win.__ytmfast && win.__ytmfast.dispose && win.__ytmfast.dispose();
   } catch (e) {}
-  delete win.__spotish;
-  assert.equal(win.__spotish, undefined);
+  delete win.__ytmfast;
+  assert.equal(win.__ytmfast, undefined);
   assert.equal(await codeOfCall(bridge, "toggle", []), "E_DISPOSED");
   bridge.tick();
   const next = B.install(win, options(win));
-  assert.equal(win.__spotish, next);
+  assert.equal(win.__ytmfast, next);
   next.tick();
   assert.equal(win.posted.filter((m) => m.type === "ready").length, 2, "ready again (auth carried over)");
   // The new bridge learns through a fresh wrapper.

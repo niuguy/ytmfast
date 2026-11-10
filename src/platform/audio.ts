@@ -14,7 +14,7 @@
 // last one goes, so it costs nothing while no visual shows.
 
 import { cleanup, createAnimatedValue, host, lifecycle, platform, reduceMotion, signal, type Accessor, type Signal } from "nsh";
-import { AudioMeter, type AudioFrame } from "spotish/native";
+import { AudioMeter, type AudioFrame } from "ytmfast/native";
 
 export type { AudioFrame };
 
@@ -51,7 +51,7 @@ interface Shared {
 }
 
 // Survives hot reload: one meter (and one `parec` or tap) per process.
-const SLOT = "__spotishAudio";
+const SLOT = "__ytmfastAudio";
 
 function shared(): Shared {
   const g = globalThis as unknown as Record<string, Shared | undefined>;

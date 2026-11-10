@@ -2,11 +2,8 @@
 //! system's (Chromium, Chrome, Brave, Edge), with a profile of the app's own,
 //! started headless for playback or in a window for signing in.
 //!
-//! Spotify's audio is encrypted (Widevine). Chrome and Edge ship their
-//! Widevine; Chromium and Brave keep a downloaded component in the profile
-//! and load it at start. A new profile has none until the browser downloads
-//! it, so the app copies the component of a browser profile the user already
-//! has, when there is one.
+//! YouTube Music's audio is not encrypted, so any Chromium-family browser
+//! plays it; no Widevine component is needed.
 //!
 //! On Unix the headless browser is driven over `--remote-debugging-pipe`
 //! (fds 3 and 4), so it opens no port at all; elsewhere over a loopback
@@ -30,16 +27,20 @@ use super::{
 /// (`RESULT_CODE_PROFILE_IN_USE`).
 pub const PROFILE_IN_USE_EXIT: i32 = 21;
 
-pub const PLAYER_URL: &str = "https://open.spotify.com/";
-pub const SIGN_IN_URL: &str = "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
+pub const PLAYER_URL: &str = "https://music.youtube.com/";
+/// Google's sign-in, returning to YouTube Music.
+pub const SIGN_IN_URL: &str =
+    "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fmusic.youtube.com%2F";
+/// The origin whose storage a sign-out clears.
+pub const PLAYER_ORIGIN: &str = "https://music.youtube.com";
 
 // --- Finding the browser -----------------------------------------------------
 
-/// The browser to run: `SPOTISH_BROWSER`, else the first one installed in a
+/// The browser to run: `YTMFAST_BROWSER`, else the first one installed in a
 /// standard location or on `PATH`. On Windows Edge comes first: Chrome's
 /// app-bound cookie encryption keeps its login from being reused there.
 pub fn find_browser() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("SPOTISH_BROWSER").filter(|p| !p.is_empty()) {
+    if let Some(path) = std::env::var_os("YTMFAST_BROWSER").filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(path));
     }
     let (names, locations) = candidates();
@@ -125,137 +126,6 @@ fn candidates() -> (Vec<&'static str>, Vec<PathBuf>) {
         ];
         (names, locations)
     }
-}
-
-// --- Widevine ----------------------------------------------------------------
-
-const HINT: &str = "latest-component-updated-widevine-cdm";
-
-/// Whether the profile has a Widevine component the browser will load.
-pub fn has_widevine(profile: &Path) -> bool {
-    let hint = profile.join("WidevineCdm").join(HINT);
-    std::fs::read_to_string(hint)
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .and_then(|v| v.get("Path").and_then(|p| p.as_str()).map(PathBuf::from))
-        .is_some_and(|dir| dir.join("manifest.json").exists())
-}
-
-/// Whether `binary`'s installation ships its own Widevine (Chrome, Edge).
-pub fn bundles_widevine(binary: &Path) -> bool {
-    let Some(dir) = binary.parent() else { return false };
-    if dir.join("WidevineCdm").is_dir() {
-        return true; // Linux Chrome and Edge
-    }
-    // Windows: `Application\<version>\WidevineCdm`.
-    let versioned = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .any(|e| e.path().join("WidevineCdm").is_dir());
-    if versioned {
-        return true;
-    }
-    // macOS: `….app/Contents/Frameworks/<framework>/Versions/<v>/Libraries/WidevineCdm`.
-    let frameworks = dir.parent().map(|contents| contents.join("Frameworks"));
-    frameworks.is_some_and(|frameworks| {
-        std::fs::read_dir(frameworks).into_iter().flatten().filter_map(|e| e.ok()).any(|framework| {
-            std::fs::read_dir(framework.path().join("Versions"))
-                .into_iter()
-                .flatten()
-                .filter_map(|e| e.ok())
-                .any(|v| v.path().join("Libraries/WidevineCdm").is_dir())
-        })
-    })
-}
-
-/// A dotted version (`4.10.2830.0`) as numbers, for ordering.
-pub fn parse_version(name: &str) -> Option<Vec<u64>> {
-    let parts: Option<Vec<u64>> = name.split('.').map(|p| p.parse::<u64>().ok()).collect();
-    parts.filter(|p| !p.is_empty())
-}
-
-/// The newest version directory under `root` that has a manifest.
-pub fn newest_version(root: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(root)
-        .ok()?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.join("manifest.json").exists())
-        .filter_map(|p| {
-            let version = parse_version(&p.file_name()?.to_string_lossy())?;
-            Some((version, p))
-        })
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, p)| p)
-}
-
-/// The Widevine component directories of the user's other browsers.
-fn widevine_sources() -> Vec<PathBuf> {
-    let mut profiles = Vec::new();
-    #[cfg(target_os = "macos")]
-    if let Some(support) = dirs::data_dir() {
-        for p in ["Google/Chrome", "Chromium", "BraveSoftware/Brave-Browser", "Microsoft Edge"] {
-            profiles.push(support.join(p));
-        }
-    }
-    #[cfg(target_os = "windows")]
-    if let Some(local) = dirs::data_local_dir() {
-        for p in [
-            r"Microsoft\Edge\User Data",
-            r"Google\Chrome\User Data",
-            r"Chromium\User Data",
-            r"BraveSoftware\Brave-Browser\User Data",
-        ] {
-            profiles.push(local.join(p));
-        }
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    if let Some(config) = dirs::config_dir() {
-        for p in ["chromium", "google-chrome", "BraveSoftware/Brave-Browser", "microsoft-edge"] {
-            profiles.push(config.join(p));
-        }
-    }
-    profiles.into_iter().map(|p| p.join("WidevineCdm")).collect()
-}
-
-/// Copies the newest Widevine version under `source` (a `WidevineCdm`
-/// directory) into `profile`, and points the profile's hint at it.
-pub fn copy_widevine_from(source: &Path, profile: &Path) -> Result<(), String> {
-    let version = newest_version(source).ok_or("no Widevine version")?;
-    let target_root = profile.join("WidevineCdm");
-    let target = target_root.join(version.file_name().ok_or("no version name")?);
-    copy_dir(&version, &target).map_err(|e| e.to_string())?;
-    let hint = serde_json::json!({ "Path": target.to_string_lossy() }).to_string();
-    std::fs::write(target_root.join(HINT), hint).map_err(|e| e.to_string())
-}
-
-/// Copies another browser's Widevine component into `profile`; true when it
-/// has one afterwards.
-pub fn adopt_widevine(profile: &Path) -> bool {
-    if has_widevine(profile) {
-        return true;
-    }
-    for source in widevine_sources() {
-        if copy_widevine_from(&source, profile).is_ok() {
-            log::info!("using the Widevine component of {}", source.display());
-            return true;
-        }
-    }
-    false
-}
-
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
-        } else {
-            std::fs::copy(entry.path(), &target)?;
-        }
-    }
-    Ok(())
 }
 
 // --- The profile lock ----------------------------------------------------------
@@ -375,7 +245,7 @@ impl RotatingLog {
 
 /// Copies a child's stderr into the rotating log, on a thread of its own.
 fn log_stderr(stderr: impl std::io::Read + Send + 'static, path: PathBuf, header: String) {
-    let _ = std::thread::Builder::new().name("spotish-browser-log".into()).spawn(move || {
+    let _ = std::thread::Builder::new().name("ytmfast-browser-log".into()).spawn(move || {
         let mut log = RotatingLog::open(path, 1 << 20);
         log.line(&header);
         for line in BufReader::new(stderr).lines() {
@@ -701,32 +571,10 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("spotish-chrome-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ytmfast-chrome-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn orders_widevine_versions_numerically() {
-        assert_eq!(parse_version("4.10.2830.0"), Some(vec![4, 10, 2830, 0]));
-        assert_eq!(parse_version("latest-component-updated-widevine-cdm"), None);
-        assert_eq!(parse_version(""), None);
-        assert!(parse_version("4.10.2830.0") > parse_version("4.9.9999.9"));
-
-        let root = scratch("widevine");
-        for v in ["4.9.9999.9", "4.10.2830.0", "4.10.300.0", "junk"] {
-            std::fs::create_dir_all(root.join(v)).unwrap();
-            std::fs::write(root.join(v).join("manifest.json"), "{}").unwrap();
-        }
-        // Newer, but without a manifest: skipped.
-        std::fs::create_dir_all(root.join("5.0.0.0")).unwrap();
-        assert_eq!(newest_version(&root), Some(root.join("4.10.2830.0")));
-
-        let profile = root.join("profile");
-        copy_widevine_from(&root, &profile).unwrap();
-        assert!(has_widevine(&profile));
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

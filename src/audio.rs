@@ -593,7 +593,7 @@ mod capture {
             let child = Arc::new(Mutex::new(None));
             let (s, c) = (stop.clone(), child.clone());
             std::thread::Builder::new()
-                .name("spotish-audio".into())
+                .name("ytmfast-audio".into())
                 .spawn(move || record(tx, s, c))
                 .map_err(|e| log::warn!("audio meter: no thread: {e}"))
                 .ok()?;
@@ -711,7 +711,7 @@ mod capture {
             return Err(std::io::Error::other("no stdout"));
         };
         let (tx, rx) = mpsc::channel();
-        std::thread::Builder::new().name("spotish-audio-read".into()).spawn(move || {
+        std::thread::Builder::new().name("ytmfast-audio-read".into()).spawn(move || {
             // 10 ms of stereo float32 per read.
             let mut bytes = vec![0u8; 480 * CHANNELS * 4];
             let mut have = 0;
@@ -1019,7 +1019,7 @@ mod capture {
             let stop = Arc::new(AtomicBool::new(false));
             let s = stop.clone();
             std::thread::Builder::new()
-                .name("spotish-audio".into())
+                .name("ytmfast-audio".into())
                 .spawn(move || record(tx, s))
                 .map_err(|e| log::warn!("audio meter: no thread: {e}"))
                 .ok()?;

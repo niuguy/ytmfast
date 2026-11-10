@@ -1,6 +1,6 @@
 //! The bridge protocol, version 1: what `bridge/bridge.js` posts through the
-//! `spotishEvent` binding, and the commands the engine sends it
-//! (`window.__spotish.call(name, args)`). Both directions are defined once,
+//! `ytmfastEvent` binding, and the commands the engine sends it
+//! (`window.__ytmfast.call(name, args)`). Both directions are defined once,
 //! here, and tested on recorded payloads.
 
 use serde::Deserialize;
@@ -59,7 +59,7 @@ struct Envelope {
     state: Value,
 }
 
-/// Reads one `spotishEvent` payload.
+/// Reads one `ytmfastEvent` payload.
 pub fn parse_message(payload: &str) -> Result<Message, Unread> {
     let envelope: Envelope = serde_json::from_str(payload).map_err(|e| Unread::Malformed(e.to_string()))?;
     if envelope.v != Some(VERSION) {
@@ -206,7 +206,7 @@ impl Command {
     /// rejection when the bridge is not installed.
     pub fn expression(&self) -> String {
         format!(
-            "(window.__spotish ? window.__spotish.call({}, {}) : Promise.reject(new Error(\"E_NOT_READY: the player is still loading\")))",
+            "(window.__ytmfast ? window.__ytmfast.call({}, {}) : Promise.reject(new Error(\"E_NOT_READY: the player is still loading\")))",
             serde_json::to_string(self.name()).expect("a name is JSON"),
             self.args(),
         )
@@ -217,7 +217,7 @@ impl Command {
 /// one is disposed of and forgotten first, so the new one installs.
 pub fn reinstall_expression(source: &str) -> String {
     format!(
-        "try {{ window.__spotish && window.__spotish.dispose && window.__spotish.dispose(); }} catch (e) {{}}\ndelete window.__spotish;\n{source}"
+        "try {{ window.__ytmfast && window.__ytmfast.dispose && window.__ytmfast.dispose(); }} catch (e) {{}}\ndelete window.__ytmfast;\n{source}"
     )
 }
 
@@ -264,7 +264,7 @@ pub fn context_lost(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spotify::model::{Collection, Home, Me, SearchResults};
+    use crate::ytmusic::model::{Collection, Home, Me, SearchResults};
 
     const STATE: &str = include_str!("fixtures/v1-state.json");
     const STATE_AD: &str = include_str!("fixtures/v1-state-ad.json");
@@ -317,7 +317,7 @@ mod tests {
         let call = |c: Command| c.expression();
         assert_eq!(
             call(Command::Seek(1234.4)),
-            r#"(window.__spotish ? window.__spotish.call("seek", [1234.0]) : Promise.reject(new Error("E_NOT_READY: the player is still loading")))"#
+            r#"(window.__ytmfast ? window.__ytmfast.call("seek", [1234.0]) : Promise.reject(new Error("E_NOT_READY: the player is still loading")))"#
         );
         assert!(call(Command::Home).contains(r#".call("home", [])"#));
         assert!(call(Command::Search("a \"b\"".into())).contains(r#".call("search", ["a \"b\""])"#));
@@ -387,8 +387,8 @@ mod tests {
     #[test]
     fn reinstalls_over_the_old_bridge() {
         let e = reinstall_expression("/*b*/");
-        assert!(e.starts_with("try { window.__spotish && window.__spotish.dispose"));
-        assert!(e.contains("delete window.__spotish;"));
+        assert!(e.starts_with("try { window.__ytmfast && window.__ytmfast.dispose"));
+        assert!(e.contains("delete window.__ytmfast;"));
         assert!(e.ends_with("/*b*/"));
     }
 }

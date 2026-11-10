@@ -1,4 +1,4 @@
-//! The `Spotify` class exported to TSX: a handle onto the process's one
+//! The `YTMusic` class exported to TSX: a handle onto the process's one
 //! engine (the session with the web player). TSX gets the player's state
 //! through listeners, data through async methods, and control through
 //! methods.
@@ -14,7 +14,7 @@ use nsh_core::{element::CallbackArgs, prelude::*};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::spotify::{
+use crate::ytmusic::{
     Collection, CoverColor, EngineError, ErrorCode, Health, Home, Library, Lyrics, Me, Player, Repeat, SearchResults, Session, Snapshot,
     bridge::{self, Command},
     engine,
@@ -77,19 +77,19 @@ impl Inner {
     }
 }
 
-/// The Spotify engine: the web player, run headless and driven for the app.
+/// The YouTube Music engine: the web player, run headless and driven for the app.
 /// Construct it as often as you like; every instance is a handle onto the
 /// one engine of the process, which starts with the first.
 #[class]
-pub struct Spotify {
+pub struct YTMusic {
     session: Session,
     inner: Rc<RefCell<Inner>>,
 }
 
 #[class]
-impl Spotify {
+impl YTMusic {
     /// A handle onto the engine (starting it, the first time): the real web
-    /// player, or the recorded demo when `SPOTISH_DEMO` is set.
+    /// player, or the recorded demo when `YTMFAST_DEMO` is set.
     pub fn new(cx: CallCx<'_>) -> Self {
         let engine = engine::engine();
         let mut state = engine.subscribe();
@@ -104,7 +104,7 @@ impl Spotify {
                 inner.borrow_mut().deliver(now);
             }
         });
-        Spotify { session: engine.session().clone(), inner }
+        YTMusic { session: engine.session().clone(), inner }
     }
 
     /// The player's current state.
@@ -206,7 +206,7 @@ impl Spotify {
         data(this, Command::Colors(image_url)).await
     }
 
-    /// A track's lyrics by URI (no lines when Spotify has none).
+    /// A track's lyrics by URI (no lines when YouTube Music has none).
     pub async fn lyrics(this: Instance<Self>, track_uri: String) -> Result<Lyrics, String> {
         data(this, Command::Lyrics(track_uri)).await
     }
@@ -292,7 +292,7 @@ impl Spotify {
         self.session.cancel_sign_in();
     }
 
-    /// Signs out of Spotify (the login is never re-imported afterwards).
+    /// Signs out of YouTube (the login is never re-imported afterwards).
     pub fn sign_out(&self) {
         self.session.sign_out();
     }
@@ -311,7 +311,7 @@ impl Spotify {
 }
 
 /// Runs `command` and returns the bridge's JSON.
-async fn ask(this: Instance<Spotify>, command: Command) -> Result<Value, EngineError> {
+async fn ask(this: Instance<YTMusic>, command: Command) -> Result<Value, EngineError> {
     let session = this.with(|s| s.session.clone());
     session
         .command(command)
@@ -320,12 +320,12 @@ async fn ask(this: Instance<Spotify>, command: Command) -> Result<Value, EngineE
 }
 
 /// A data command, decoded into its type.
-async fn data<T: DeserializeOwned>(this: Instance<Spotify>, command: Command) -> Result<T, String> {
+async fn data<T: DeserializeOwned>(this: Instance<YTMusic>, command: Command) -> Result<T, String> {
     let value = ask(this, command.clone()).await?;
     bridge::decode(&command, value).map_err(String::from)
 }
 
 /// A control: the answer's value is ignored.
-async fn control(this: Instance<Spotify>, command: Command) -> Result<(), String> {
+async fn control(this: Instance<YTMusic>, command: Command) -> Result<(), String> {
     ask(this, command).await.map(|_| ()).map_err(String::from)
 }

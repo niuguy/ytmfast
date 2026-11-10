@@ -72,7 +72,7 @@ pub struct CdpEvent {
 }
 
 /// The method of the event sent when the connection ends.
-pub const CLOSED: &str = "spotish.closed";
+pub const CLOSED: &str = "ytmfast.closed";
 
 /// A connection to one browser.
 pub struct Cdp {
@@ -98,7 +98,7 @@ impl Cdp {
         let pending: PendingMap = Arc::default();
         let closed = Arc::new(AtomicBool::new(false));
         std::thread::Builder::new()
-            .name("spotish-cdp-write".into())
+            .name("ytmfast-cdp-write".into())
             .spawn(move || {
                 let mut writer = writer;
                 while let Ok(message) = queued.recv() {
@@ -114,7 +114,7 @@ impl Cdp {
             let pending = pending.clone();
             let closed = closed.clone();
             std::thread::Builder::new()
-                .name("spotish-cdp-read".into())
+                .name("ytmfast-cdp-read".into())
                 .spawn(move || {
                     let mut reader = BufReader::with_capacity(1 << 16, reader);
                     let mut message = Vec::new();
@@ -159,7 +159,7 @@ impl Cdp {
         let pending: PendingMap = Arc::default();
         let closed = Arc::new(AtomicBool::new(false));
         std::thread::Builder::new()
-            .name("spotish-cdp-write".into())
+            .name("ytmfast-cdp-write".into())
             .spawn(move || {
                 let shutdown = stream.try_clone();
                 let mut writer = WebSocket::from_raw_socket(stream, Role::Client, None);
@@ -179,7 +179,7 @@ impl Cdp {
             let pending = pending.clone();
             let closed = closed.clone();
             std::thread::Builder::new()
-                .name("spotish-cdp-read".into())
+                .name("ytmfast-cdp-read".into())
                 .spawn(move || {
                     loop {
                         match socket.read() {

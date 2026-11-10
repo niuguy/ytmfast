@@ -2,7 +2,7 @@
 // covers everywhere, 8 rows on Home, playlists of 60). They measure, they do
 // not check, so they run only when asked:
 //
-//   SPOTISH_BENCH=1 nsh test --target macos --fps -v tests/bench.test.tsx
+//   YTMFAST_BENCH=1 nsh test --target macos --fps -v tests/bench.test.tsx
 //
 // (or `--target linux`: the platform follows the machine's.)
 // Each scenario logs a `bench:` mark before its per-second perf lines.
@@ -10,7 +10,7 @@ import os from "os";
 import process from "process";
 import { open, test as plainTest } from "nsh/test";
 
-const test = process.env.SPOTISH_BENCH === "1" ? plainTest : plainTest.skip;
+const test = process.env.YTMFAST_BENCH === "1" ? plainTest : plainTest.skip;
 
 async function start() {
   const app = await open("../App.tsx", {

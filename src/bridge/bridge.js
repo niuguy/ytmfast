@@ -14,25 +14,25 @@
 // setLiked, playContext and playTrack (E_AD).
 //
 // SINGLE SOURCE OF TRUTH. This file is what the Rust engine `include_str!`s
-// (src/spotify/session.rs). `src/bridge/source.ts` is GENERATED from it so the
+// (src/ytmusic/session.rs). `src/bridge/source.ts` is GENERATED from it so the
 // OTA-updatable TSX bundle can carry a newer bridge (`setBridge(BRIDGE_SOURCE)`):
 //   node src/bridge/gen-source.mjs           # regenerate source.ts
 //   node src/bridge/gen-source.mjs --check   # fail if source.ts is stale
 //   node --test src/bridge/tests/            # unit tests (also check the sync)
 // Bump REVISION when the behavior changes: a bridge only replaces an installed
 // one of the same or an older revision. To hot-swap, the engine runs
-// `window.__spotish.dispose(); delete window.__spotish;` and then the new
+// `window.__ytmfast.dispose(); delete window.__ytmfast;` and then the new
 // source; dispose() stops timers and loops and restores the page's fetch and
 // media `play` where nothing wrapped them since.
 //
 // Protocol v1, every message `{ v: 1, type, ... }` through
-// `window.spotishEvent(JSON.stringify(message))`:
+// `window.ytmfastEvent(JSON.stringify(message))`:
 //   { v:1, type:"ready" }                  once the player bar and auth exist
 //   { v:1, type:"state", state:{...} }     on change, plus a 1 s heartbeat
 //   { v:1, type:"auth" }                   when the player's auth changes
-// Calls: `window.__spotish.call(name, argsArray)` (Runtime.evaluate with
+// Calls: `window.__ytmfast.call(name, argsArray)` (Runtime.evaluate with
 // awaitPromise + returnByValue) resolves the plain JSON value, or rejects with
-// `Error("E_CODE: message")`. The same methods are on `window.__spotish`.
+// `Error("E_CODE: message")`. The same methods are on `window.__ytmfast`.
 (function (root) {
   "use strict";
 
@@ -381,7 +381,7 @@
   };
 
   // --- Normalizing what the queries answer ----------------------------------
-  // Into the few shapes the app shows (src/ui/types.ts, src/spotify/model.rs):
+  // Into the few shapes the app shows (src/ui/types.ts, src/ytmusic/model.rs):
   // items (playlists, albums, artists, shows) and tracks.
 
   const pickImage = (sources, prefer = 300) => {
@@ -469,7 +469,7 @@
 
     // What outlives a re-injection: the learned headers and hashes, the media
     // elements seen, the page's fetch.
-    let shared = win.__spotishShared;
+    let shared = win.__ytmfastShared;
     if (!shared || shared.v !== 1) {
       shared = {
         v: 1,
@@ -485,16 +485,16 @@
         onPlay: null,
       };
       try {
-        Object.defineProperty(win, "__spotishShared", { value: shared, configurable: true, enumerable: false, writable: true });
+        Object.defineProperty(win, "__ytmfastShared", { value: shared, configurable: true, enumerable: false, writable: true });
       } catch (_) {
-        win.__spotishShared = shared;
+        win.__ytmfastShared = shared;
       }
     }
 
     const post = (message) => {
       if (!alive) return;
       try {
-        if (typeof win.spotishEvent === "function") win.spotishEvent(JSON.stringify(message));
+        if (typeof win.ytmfastEvent === "function") win.ytmfastEvent(JSON.stringify(message));
       } catch (_) {}
     };
 
@@ -582,7 +582,7 @@
     // The player may keep its media element out of the document: remember the
     // ones that play (read only; it plays as it would).
     const Media = win.HTMLMediaElement;
-    if (Media && Media.prototype && typeof Media.prototype.play === "function" && !Media.prototype.play.__spotish) {
+    if (Media && Media.prototype && typeof Media.prototype.play === "function" && !Media.prototype.play.__ytmfast) {
       const play = Media.prototype.play;
       const wrapped = function () {
         try {
@@ -590,7 +590,7 @@
         } catch (_) {}
         return play.apply(this, arguments);
       };
-      wrapped.__spotish = true;
+      wrapped.__ytmfast = true;
       shared.play = play;
       shared.playWrapper = wrapped;
       Media.prototype.play = wrapped;
@@ -1306,7 +1306,7 @@
     } catch (_) {
       return null;
     }
-    const existing = win.__spotish;
+    const existing = win.__ytmfast;
     if (existing) {
       if (typeof existing.revision === "number" && existing.revision > REVISION) return existing;
       try {
@@ -1315,9 +1315,9 @@
     }
     const bridge = createBridge(win, options);
     try {
-      Object.defineProperty(win, "__spotish", { value: bridge, configurable: true, enumerable: false, writable: true });
+      Object.defineProperty(win, "__ytmfast", { value: bridge, configurable: true, enumerable: false, writable: true });
     } catch (_) {
-      win.__spotish = bridge;
+      win.__ytmfast = bridge;
     }
     return bridge;
   };

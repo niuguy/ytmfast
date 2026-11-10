@@ -300,9 +300,6 @@ pub enum ErrorCode {
     /// No Chromium-family browser is installed.
     #[prop(rename = "E_NO_BROWSER")]
     NoBrowser,
-    /// The browser has no Widevine component, so it cannot play.
-    #[prop(rename = "E_NO_WIDEVINE")]
-    NoWidevine,
     /// The player did not answer in time.
     #[prop(rename = "E_TIMEOUT")]
     Timeout,
@@ -328,12 +325,11 @@ pub enum ErrorCode {
 
 impl ErrorCode {
     /// Every code, for parsing.
-    pub const ALL: [ErrorCode; 12] = [
+    pub const ALL: [ErrorCode; 11] = [
         ErrorCode::NotReady,
         ErrorCode::SignedOut,
         ErrorCode::ProfileInUse,
         ErrorCode::NoBrowser,
-        ErrorCode::NoWidevine,
         ErrorCode::Timeout,
         ErrorCode::NotFound,
         ErrorCode::Disabled,
@@ -350,7 +346,6 @@ impl ErrorCode {
             ErrorCode::SignedOut => "E_SIGNED_OUT",
             ErrorCode::ProfileInUse => "E_PROFILE_IN_USE",
             ErrorCode::NoBrowser => "E_NO_BROWSER",
-            ErrorCode::NoWidevine => "E_NO_WIDEVINE",
             ErrorCode::Timeout => "E_TIMEOUT",
             ErrorCode::NotFound => "E_NOT_FOUND",
             ErrorCode::Disabled => "E_DISABLED",

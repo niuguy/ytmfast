@@ -20,7 +20,7 @@
 //   nsh keygen keys/release       # signs packages, in CI
 //   nsh keygen keys/update        # signs latest.json; nsh.json updater.publicKey ← update.pub
 //   nsh certify --root keys/root.secret --key keys/release.pub \
-//     --apps dev.huacnlee.spotish -o keys/release.cert   # renew yearly
+//     --apps dev.ytmfast -o keys/release.cert   # renew yearly
 //   gh secret set NSH_RELEASE_KEY < keys/release.secret
 //   gh secret set NSH_RELEASE_CERT < keys/release.cert
 //   gh secret set NSH_UPDATE_KEY < keys/update.secret
@@ -31,7 +31,7 @@
 // Every release raises `build` in nsh.json (one counter for packages and
 // app builds) and `version` (semver). Then, on a `v*` tag:
 // - TSX only (screens, styles, bridge.js once it ships in the bundle):
-//     nsh publish --key release.secret --cert release.cert -o dist/dev.huacnlee.spotish-<build>.nshpkg
+//     nsh publish --key release.secret --cert release.cert -o dist/dev.ytmfast-<build>.nshpkg
 //     nsh update-manifest --package dist/…nshpkg --notes CHANGES.md --key update.secret -o dist
 //   Publish with the nsh version of the app builds in the field, or set
 //   nsh.json "minRuntime" to the oldest runtime the TSX supports; when the

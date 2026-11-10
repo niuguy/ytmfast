@@ -1,4 +1,4 @@
-// `EngineBackend`: the `Backend` over the native engine (`spotish/native`'s
+// `EngineBackend`: the `Backend` over the native engine (`ytmfast/native`'s
 // `Spotify` class). This is the only file that calls the engine, so a change
 // to the engine's API changes only this file.
 //
@@ -8,7 +8,7 @@
 // disposed when a hot update makes a new one.
 
 import { type Accessor, signal } from "nsh";
-import { Spotify, type Health as NativeHealth, type Player as NativePlayer } from "spotish/native";
+import { Spotify, type Health as NativeHealth, type Player as NativePlayer } from "ytmfast/native";
 import {
   type Backend,
   backendError,
@@ -25,7 +25,7 @@ import {
   type SearchResults,
 } from "./types";
 
-const SLOT_KEY = "__spotishEngine";
+const SLOT_KEY = "__ytmfastEngine";
 
 /** The engine backend. The one a previous version of the TSX made (a hot
  * update) stops listening first. */

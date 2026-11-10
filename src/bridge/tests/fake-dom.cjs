@@ -197,7 +197,7 @@ function fakeWindow(body) {
       clearInterval(id);
     },
     intervals,
-    spotishEvent: (text) => posted.push(JSON.parse(text)),
+    ytmfastEvent: (text) => posted.push(JSON.parse(text)),
     posted,
     clock,
   };

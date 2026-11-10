@@ -11,7 +11,7 @@
 // the mapping onto tokens is ./palette.ts.
 
 import { cleanup, setColorScheme, setTheme, token, type Theme } from "nsh";
-import { SystemTheme } from "spotish/native";
+import { SystemTheme } from "ytmfast/native";
 
 import { mapPalette, type SystemPalette } from "./palette";
 

@@ -10,7 +10,7 @@ import { engineBackend } from "../backend/engine";
 import { BRIDGE_SOURCE } from "../bridge/source";
 import type { Backend } from "../backend/types";
 
-const DEMO_KEY = "__spotishDemo";
+const DEMO_KEY = "__ytmfastDemo";
 
 function params(): Record<string, unknown> {
   try {

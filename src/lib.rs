@@ -1,19 +1,19 @@
-//! Spotish's Rust crate: the engine that runs and drives Spotify's own web
-//! player (`spotify`), exported to the TSX UI as the `Spotify` class
+//! YTMFast's Rust crate: the engine that runs and drives YouTube Music's web
+//! player (`ytmusic`), exported to the TSX UI as the `YTMusic` class
 //! (`exports`). The screens are TSX (`App.tsx`); this crate ships in the
 //! binary and does the work TSX cannot: processes, sockets and the browser.
 
 pub mod audio;
 pub mod exports;
 pub mod media;
-pub mod spotify;
+pub mod ytmusic;
 pub mod theme;
 pub mod version;
 
 use nsh_core::prelude::*;
 
 pub use audio::AudioMeter;
-pub use exports::Spotify;
+pub use exports::YTMusic;
 pub use media::MediaControls;
 pub use theme::SystemTheme;
 pub use version::Version;
@@ -32,14 +32,14 @@ const IMAGE_MEMORY: usize = 32 << 20;
 /// (tens of KB each) are enough, and the rest are read from disk again.
 const ENCODED_MEMORY: usize = 8 << 20;
 
-/// The crate's UI set: what `App.tsx` imports from `spotish/native`.
-#[native_module("spotish/native")]
+/// The crate's UI set: what `App.tsx` imports from `ytmfast/native`.
+#[native_module("ytmfast/native")]
 fn native(registry: &mut Registry) {
     nsh_core::image::budget().set_limit(IMAGE_MEMORY.min(nsh_core::image::default_budget()));
     let loader = nsh_core::image::loader::loader();
     loader.set_encoded_limit(ENCODED_MEMORY.min(loader.encoded_limit()));
     registry
-        .class::<Spotify>()
+        .class::<YTMusic>()
         .class::<MediaControls>()
         .class::<SystemTheme>()
         .class::<AudioMeter>()
