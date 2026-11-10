@@ -20,8 +20,14 @@ import {
   type Library,
   type Lyrics,
   type Me,
+  type Page,
   type PlayerState,
+  type PlaylistChoice,
+  type Queue,
+  type Rating,
   type RepeatMode,
+  type SearchFilter,
+  type SearchPage,
   type SearchResults,
 } from "./types";
 
@@ -73,6 +79,7 @@ function player(native: NativePlayer | null | undefined): PlayerState {
     volume: native.volume,
     muted: native.muted,
     liked: native.liked,
+    disliked: native.disliked,
     canNext: native.canNext,
     canPrevious: native.canPrevious,
     ad: native.ad,
@@ -173,6 +180,78 @@ export class EngineBackend implements Backend {
   async me(): Promise<Me> {
     const me = await call(() => this.#ytm.me());
     return { id: me.id, name: me.name, image: me.image };
+  }
+
+  homeWith(params: string): Promise<Home> {
+    return call(() => this.#ytm.homeWith(params));
+  }
+
+  browse(uri: string): Promise<Page> {
+    return call(() => this.#ytm.browse(uri));
+  }
+
+  searchFiltered(query: string, filter: SearchFilter, continuation: string | null): Promise<SearchPage> {
+    return call(() => this.#ytm.searchFiltered(query, filter, continuation));
+  }
+
+  searchSuggestions(query: string): Promise<string[]> {
+    return call(() => this.#ytm.searchSuggestions(query));
+  }
+
+  history(): Promise<Collection> {
+    return call(() => this.#ytm.history());
+  }
+
+  playlistChoices(trackUri: string): Promise<PlaylistChoice[]> {
+    return call(() => this.#ytm.playlistChoices(trackUri));
+  }
+
+  queue(): Promise<Queue> {
+    return call(() => this.#ytm.queue());
+  }
+
+  queueAdd(uri: string, next: boolean): Promise<Queue> {
+    return call(() => this.#ytm.queueAdd(uri, next));
+  }
+
+  queueRemove(id: string): Promise<Queue> {
+    return call(() => this.#ytm.queueRemove(id));
+  }
+
+  queueJump(id: string): Promise<Queue> {
+    return call(() => this.#ytm.queueJump(id));
+  }
+
+  startRadio(uri: string): Promise<void> {
+    return call(() => this.#ytm.startRadio(uri));
+  }
+
+  setDisliked(on: boolean): Promise<void> {
+    return call(() => this.#ytm.setDisliked(on));
+  }
+
+  rate(trackUri: string, rating: Rating): Promise<void> {
+    return call(() => this.#ytm.rate(trackUri, rating));
+  }
+
+  setSaved(uri: string, on: boolean): Promise<void> {
+    return call(() => this.#ytm.setSaved(uri, on));
+  }
+
+  setSubscribed(artistUri: string, on: boolean): Promise<void> {
+    return call(() => this.#ytm.setSubscribed(artistUri, on));
+  }
+
+  addToPlaylist(playlistUri: string, trackUri: string): Promise<void> {
+    return call(() => this.#ytm.addToPlaylist(playlistUri, trackUri));
+  }
+
+  createPlaylist(name: string, trackUri: string | null): Promise<string> {
+    return call(() => this.#ytm.createPlaylist(name, trackUri));
+  }
+
+  removeFromPlaylist(playlistUri: string, trackUri: string, uid: string): Promise<void> {
+    return call(() => this.#ytm.removeFromPlaylist(playlistUri, trackUri, uid));
   }
 
   // ---- Controls ----

@@ -220,6 +220,9 @@ test("an album page: header, tracks with the album's artist, and its playlist", 
     subtitle: "The Quiet Fields · Album · 2021",
     image: "https://lh3.googleusercontent.com/pl=w544-h544",
     description: "Recorded at night.",
+    saved: null,
+    editable: false,
+    subscribed: null,
   });
   assert.equal(collection.total, 2);
   assert.deepEqual(collection.tracks.map((t) => [t.name, t.artists, t.album]), [
@@ -312,6 +315,139 @@ test("lyrics: the lyrics tab's page, as plain lines with their source", () => {
   assert.deepEqual(B.lyricsOf(null), { synced: false, lines: [], provider: "" });
 });
 
+// --- Discovery, queue, search pages, history, playlists ---------------------------
+
+const navButton = (name, params, color = 4288988671) => ({
+  musicNavigationButtonRenderer: { buttonText: runs(name), solid: { leftStripeColor: color }, clickCommand: { browseEndpoint: { browseId: "FEmusic_moods_and_genres_category", params } } },
+});
+
+test("navigation buttons are pages to open, with their stripe's colour", () => {
+  const item = B.itemOf(navButton("Chill", "ggMPOg1uX1JO").musicNavigationButtonRenderer);
+  assert.deepEqual(item, { uri: "ytm:page:FEmusic_moods_and_genres_category:ggMPOg1uX1JO", kind: "page", name: "Chill", subtitle: "", image: "", color: "#a4c5ff" });
+  assert.deepEqual(B.pageOfUri("ytm:page:FEmusic_charts"), { browseId: "FEmusic_charts" });
+  assert.deepEqual(B.pageOfUri(item.uri), { browseId: "FEmusic_moods_and_genres_category", params: "ggMPOg1uX1JO" });
+  assert.throws(() => B.pageOfUri("ytm:album:x"), /E_BAD_ARGS/);
+  assert.equal(B.colorOf(0), "");
+});
+
+test("a page's rows: carousels and grids in order, rows of buttons marked", () => {
+  const json = {
+    header: { musicHeaderRenderer: { title: runs("Moods & genres") } },
+    contents: {
+      sectionListRenderer: {
+        contents: [
+          { gridRenderer: { items: [navButton("New releases", ""), navButton("Charts", "x")] } },
+          carousel("New albums & singles", [card("Kites", ["Single"], browseTo("MPREb_k", "ALBUM"))]),
+          { gridRenderer: { header: { gridHeaderRenderer: { title: runs("Genres") } }, items: [navButton("Blues", "b")] } },
+          carousel("Empty", []),
+        ],
+      },
+    },
+  };
+  const page = B.pageOf(json, "");
+  assert.equal(page.title, "Moods & genres");
+  assert.deepEqual(page.sections.map((s) => [s.title, s.kind, s.items.length]), [
+    ["", "buttons", 2],
+    ["New albums & singles", "cards", 1],
+    ["Genres", "buttons", 1],
+  ]);
+  assert.equal(B.pageOf({ contents: {} }, "Explore").title, "Explore");
+});
+
+test("Home's chips filter it", () => {
+  const json = {
+    contents: {
+      sectionListRenderer: {
+        header: {
+          chipCloudRenderer: {
+            chips: [
+              { chipCloudChipRenderer: { text: runs("Relax"), isSelected: true, navigationEndpoint: { browseEndpoint: { browseId: "FEmusic_home", params: "R" } } } },
+              { chipCloudChipRenderer: { text: runs("Workout"), navigationEndpoint: { browseEndpoint: { browseId: "FEmusic_home", params: "W" } } } },
+            ],
+          },
+        },
+      },
+    },
+  };
+  assert.deepEqual(B.homeOf(json, 9).chips, [
+    { title: "Relax", params: "R", selected: true },
+    { title: "Workout", params: "W", selected: false },
+  ]);
+});
+
+test("saved, editable and subscribed states come from the page's buttons", () => {
+  const saved = JSON.parse(JSON.stringify(albumPage));
+  saved.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents[0].musicResponsiveHeaderRenderer.buttons = [
+    { toggleButtonRenderer: { isToggled: true, defaultIcon: { iconType: "BOOKMARK_BORDER" } } },
+  ];
+  assert.equal(B.collectionOf(saved, "ytm:album:a", "album").collection.header.saved, true);
+  const own = { header: { musicEditablePlaylistDetailHeaderRenderer: { header: { musicResponsiveHeaderRenderer: { title: runs("Mine") } } } }, contents: {} };
+  const mine = B.collectionOf(own, "ytm:playlist:PLme", "playlist").collection.header;
+  assert.equal(mine.editable, true);
+  assert.equal(mine.saved, null);
+  const artist = { header: { musicImmersiveHeaderRenderer: { title: runs("Ode"), subscriptionButton: { subscribeButtonRenderer: { subscribed: true } } } }, contents: {} };
+  assert.equal(B.artistOf(artist, "ytm:artist:UCo").collection.header.subscribed, true);
+});
+
+// A queue entry as the page's queue store holds it.
+const queued = (videoId, itemId, { title = "Song " + videoId, selected = false, wrapped = false } = {}) => {
+  const r = {
+    videoId,
+    title: runs(title),
+    longBylineText: runs(artistRun("Mira Vale", "UCm"), " • ", "Neon Orchard", " • ", "2023"),
+    lengthText: runs("3:05"),
+    thumbnail: thumbs("https://i.ytimg.com/vi/" + videoId + "/hq.jpg"),
+    selected,
+    menu: { menuRenderer: { items: [{ menuServiceItemRenderer: { serviceEndpoint: { removeFromQueueEndpoint: { videoId, itemId } } } }] } },
+  };
+  return wrapped ? { playlistPanelVideoWrapperRenderer: { primaryRenderer: { playlistPanelVideoRenderer: r } } } : { playlistPanelVideoRenderer: r };
+};
+
+test("the queue: its entries, the one playing, and autoplay after them", () => {
+  const q = B.queueOf({ items: [queued("a", "0"), queued("b", "1", { wrapped: true }), queued("c", "7")], selectedItemIndex: 1, automixItems: [queued("x", "")] });
+  assert.deepEqual(q.items.map((i) => [i.id, i.uri, i.current]), [["0", "ytm:track:a", false], ["1", "ytm:track:b", true], ["7", "ytm:track:c", false]]);
+  assert.equal(q.current, 1);
+  assert.equal(q.items[0].artists, "Mira Vale");
+  assert.equal(q.items[0].durationMs, 185000);
+  assert.deepEqual(q.autoplay.map((i) => i.uri), ["ytm:track:x"]);
+  assert.deepEqual(B.queueOf(null), { items: [], current: -1, autoplay: [] });
+});
+
+test("a filtered search page: songs as tracks, the rest as items, and where it goes on", () => {
+  const json = { contents: { musicShelfRenderer: { contents: [songRow("s1", "Kites")], continuations: [{ nextContinuationData: { continuation: "MORE" } }] } } };
+  const songs = B.searchPageOf(json, "songs");
+  assert.deepEqual(songs.tracks.map((t) => t.uri), ["ytm:track:s1"]);
+  assert.equal(songs.continuation, "MORE");
+  const albums = { continuationContents: { musicShelfContinuation: { contents: [{ musicResponsiveListItemRenderer: { navigationEndpoint: browseTo("MPREb_n", "ALBUM"), flexColumns: [col(runs("Neon Orchard")), col(runs("Album"))] } }] } } };
+  const page = B.searchPageOf(albums, "albums");
+  assert.deepEqual(page.items.map((i) => i.uri), ["ytm:album:MPREb_n"]);
+  assert.equal(page.continuation, "");
+  assert.deepEqual(Object.keys(B.SEARCH_FILTERS), ["songs", "videos", "albums", "artists", "playlists"]);
+});
+
+test("search suggestions are the queries offered", () => {
+  const json = { contents: [{ searchSuggestionsSectionRenderer: { contents: [
+    { searchSuggestionRenderer: { suggestion: runs("radio", "head"), navigationEndpoint: { searchEndpoint: { query: "radiohead" } } } },
+    { musicResponsiveListItemRenderer: {} },
+  ] } }] };
+  assert.deepEqual(B.suggestionsOf(json), ["radiohead"]);
+});
+
+test("history: every day's songs in one list; playlist choices without Liked Music", () => {
+  const json = { contents: { sectionListRenderer: { contents: [
+    { musicShelfRenderer: { title: runs("Today"), contents: [songRow("h1", "One")] } },
+    { musicShelfRenderer: { title: runs("Yesterday"), contents: [songRow("h2", "Two")] } },
+  ] } } };
+  const h = B.historyOf(json);
+  assert.equal(h.header.kind, "history");
+  assert.deepEqual(h.tracks.map((t) => t.uri), ["ytm:track:h1", "ytm:track:h2"]);
+  const choices = { contents: [{ addToPlaylistRenderer: { playlists: [
+    { playlistAddToOptionRenderer: { playlistId: "LM", title: runs("Liked music") } },
+    { playlistAddToOptionRenderer: { playlistId: "PLw", title: runs("workout"), shortBylineText: runs("6 tracks") } },
+  ] } }] };
+  assert.deepEqual(B.playlistChoicesOf(choices), [{ uri: "ytm:playlist:PLw", name: "workout", subtitle: "6 tracks" }]);
+});
+
 // --- Small parts --------------------------------------------------------------
 
 test("URIs, watch pages and the playing context", () => {
@@ -369,11 +505,42 @@ function page({ cfg = true, ad = false } = {}) {
     unMute: () => (p.muted = false),
   });
   const app = h("ytmusic-app", {}, barEl, mp);
+  // The page's queue: a store, and the service's select and remove.
+  const queueState = { items: [queued("v1", "0", { selected: true }), queued("v2", "1"), queued("v3", "2")], selectedItemIndex: 0, automixItems: [] };
+  app.queue = {
+    store: { getState: () => ({ queue: queueState }) },
+    selectQueueItem: (entry) => {
+      queueState.selectedItemIndex = queueState.items.indexOf(entry);
+      p.video = entry.playlistPanelVideoRenderer.videoId;
+    },
+  };
+  const commands = [];
   const body = h("body", {}, app);
   const win = fakeWindow(body);
+  // The page's menu items run its commands: here, the queue's.
+  win.document.createElement = (tag) => {
+    const el = h(tag, {});
+    if (tag === "ytmusic-menu-service-item-renderer") {
+      el.handleCommand = (command) => {
+        commands.push(command);
+        if (command.queueAddEndpoint) {
+          const t = command.queueAddEndpoint.queueTarget;
+          const entry = queued(t.videoId || t.playlistId, "9");
+          const at = command.queueAddEndpoint.queueInsertPosition === "INSERT_AFTER_CURRENT_VIDEO" ? queueState.selectedItemIndex + 1 : queueState.items.length;
+          queueState.items = [...queueState.items.slice(0, at), entry, ...queueState.items.slice(at)];
+        }
+        if (command.removeFromQueueEndpoint) {
+          queueState.items = queueState.items.filter((e) => e.playlistPanelVideoRenderer.menu.menuRenderer.items[0].menuServiceItemRenderer.serviceEndpoint.removeFromQueueEndpoint.itemId !== command.removeFromQueueEndpoint.itemId);
+        }
+        return Promise.resolve();
+      };
+    }
+    return el;
+  };
+  win.document.body = body;
   if (cfg) win.ytcfg = { get: (k) => ({ INNERTUBE_CONTEXT: { client: { clientName: "WEB_REMIX", clientVersion: "1.2" } }, INNERTUBE_CONTEXT_CLIENT_NAME: 67 })[k] };
   win.navigator.mediaSession = { metadata: { title: "Glass Bees", artist: "Mira Vale", album: "Neon Orchard", artwork: [{ src: "https://lh3.googleusercontent.com/gb=w60-h60" }, { src: "https://lh3.googleusercontent.com/gb=w226-h226" }] } };
-  return { win, p, app, bar: barEl, mp, like };
+  return { win, p, app, bar: barEl, mp, like, commands, queueState };
 }
 
 test("ready waits for the API config; then the state is reported", () => {
@@ -457,6 +624,82 @@ test("when the page does not take the navigation, it loads the watch page", asyn
   assert.equal(answer.confirmed, false);
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(win.assigned, "/watch?v=zz");
+});
+
+test("the queue: play next, add to the end, remove, and jump through the page's own commands", async () => {
+  const { win, p, commands } = page();
+  const bridge = B.createBridge(win, options(win));
+  let q = await bridge.call("queue", []);
+  assert.deepEqual(q.items.map((i) => i.uri), ["ytm:track:v1", "ytm:track:v2", "ytm:track:v3"]);
+  q = await bridge.call("queueAdd", ["ytm:track:nx", true]);
+  assert.deepEqual(q.items.map((i) => i.uri).slice(0, 2), ["ytm:track:v1", "ytm:track:nx"]);
+  assert.equal(commands[0].queueAddEndpoint.queueInsertPosition, "INSERT_AFTER_CURRENT_VIDEO");
+  assert.deepEqual(commands[0].queueAddEndpoint.queueTarget.onEmptyQueue, { watchEndpoint: { videoId: "nx" } });
+  q = await bridge.call("queueAdd", ["ytm:playlist:PLz", false]);
+  assert.equal(q.items[q.items.length - 1].uri, "ytm:track:PLz");
+  assert.equal(commands[1].queueAddEndpoint.queueTarget.playlistId, "PLz");
+  q = await bridge.call("queueRemove", ["1"]);
+  assert.ok(!q.items.some((i) => i.uri === "ytm:track:v2"));
+  await bridge.call("queueJump", ["2"]);
+  assert.equal(p.video, "v3");
+  await rejects(bridge.call("queueJump", ["404"]), "E_NOT_FOUND");
+});
+
+test("radio: a song's mix, played through the page", async () => {
+  const { win, app } = page();
+  const asked = [];
+  app.addEventListener("yt-navigate", (e) => asked.push(e.detail.endpoint));
+  const bridge = B.createBridge(win, options(win));
+  await bridge.call("startRadio", ["ytm:track:v5"]);
+  assert.deepEqual(asked[0].watchEndpoint, { videoId: "v5", playlistId: "RDAMVMv5", params: "wAEB" });
+  await bridge.call("startRadio", ["ytm:playlist:PLx"]);
+  assert.deepEqual(asked[1].watchPlaylistEndpoint, { playlistId: "RDAMPLPLx", params: "wAEB" });
+});
+
+test("writes to the account need it signed in, and ask the API", async () => {
+  const { win } = page();
+  const bridge = B.createBridge(win, options(win));
+  await rejects(bridge.call("setSaved", ["ytm:playlist:PLx", true]), "E_SIGNED_OUT");
+  win.document.cookie = "SAPISID=abc";
+  const sent = [];
+  win.fetch = async (url, init) => {
+    sent.push([url.split("?")[0], JSON.parse(init.body)]);
+    return { ok: true, status: 200, json: async () => (url.includes("playlist/create") ? { playlistId: "PLnew" } : { status: "STATUS_SUCCEEDED" }) };
+  };
+  win.crypto = { subtle: { digest: async () => new Uint8Array(20).buffer } };
+  win.TextEncoder = TextEncoder;
+  await bridge.call("setSaved", ["ytm:playlist:PLx", true]);
+  await bridge.call("setSubscribed", ["ytm:artist:UCa", false]);
+  await bridge.call("rate", ["ytm:track:t1", "dislike"]);
+  await bridge.call("addToPlaylist", ["ytm:playlist:PLme", "ytm:track:t1"]);
+  assert.equal(await bridge.call("createPlaylist", ["Road trip", "ytm:track:t1"]), "ytm:playlist:PLnew");
+  await bridge.call("removeFromPlaylist", ["ytm:playlist:PLme", "ytm:track:t1", "SET1"]);
+  assert.deepEqual(sent.map(([u]) => u), [
+    "/youtubei/v1/like/like",
+    "/youtubei/v1/subscription/unsubscribe",
+    "/youtubei/v1/like/dislike",
+    "/youtubei/v1/browse/edit_playlist",
+    "/youtubei/v1/playlist/create",
+    "/youtubei/v1/browse/edit_playlist",
+  ]);
+  assert.deepEqual(sent[0][1].target, { playlistId: "PLx" });
+  assert.deepEqual(sent[1][1].channelIds, ["UCa"]);
+  assert.deepEqual(sent[3][1].actions, [{ action: "ACTION_ADD_VIDEO", addedVideoId: "t1", dedupeOption: "DEDUPE_OPTION_SKIP" }]);
+  assert.deepEqual(sent[4][1], Object.assign({ context: sent[4][1].context }, { title: "Road trip", privacyStatus: "PRIVATE", videoIds: ["t1"] }));
+  assert.deepEqual(sent[5][1].actions, [{ setVideoId: "SET1", action: "ACTION_REMOVE_VIDEO", removedVideoId: "t1" }]);
+  await rejects(bridge.call("removeFromPlaylist", ["ytm:playlist:PLme", "ytm:track:t1", "t1:0"]), "E_BAD_ARGS");
+  await rejects(bridge.call("rate", ["ytm:track:t1", "meh"]), "E_BAD_ARGS");
+});
+
+test("dislike: the bar's button, reported in the state", async () => {
+  const { win, like } = page();
+  const dislike = h("div", { id: "button-shape-dislike" }, h("button", {}));
+  dislike.children[0].onclick = () => like.setAttribute("like-status", "DISLIKE");
+  like.append(dislike);
+  const bridge = B.createBridge(win, options(win));
+  await bridge.call("setDisliked", [true]);
+  bridge.tick();
+  assert.equal(win.posted.filter((m) => m.type === "state").pop().state.disliked, true);
 });
 
 test("Google's consent wall is answered once, with Reject all", () => {

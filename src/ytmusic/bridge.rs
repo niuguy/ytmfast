@@ -117,6 +117,70 @@ pub enum Command {
     Colors(String),
     /// A track's lyrics, by its URI.
     Lyrics(String),
+    /// Home filtered by one of its chips (`params`).
+    HomeChip(String),
+    /// A browse page (`ytm:page:…`).
+    Browse(String),
+    /// One page of a search for one kind (`songs`, `videos`, `albums`,
+    /// `artists`, `playlists`), or the page after `continuation`.
+    SearchFiltered {
+        query: String,
+        filter: String,
+        continuation: Option<String>,
+    },
+    /// Suggestions for a query being typed.
+    SearchSuggestions(String),
+    /// What the account played.
+    History,
+    /// The playlists a song can be added to.
+    PlaylistChoices(String),
+    /// The play queue.
+    Queue,
+    /// Puts a song, album, playlist or mix in the queue, after the one
+    /// playing (`next`) or at the end.
+    QueueAdd {
+        uri: String,
+        next: bool,
+    },
+    /// Takes the queue's entry out of it.
+    QueueRemove(String),
+    /// Plays the queue's entry.
+    QueueJump(String),
+    /// Plays the radio of a song, album, playlist or artist.
+    StartRadio(String),
+    /// Dislikes the song playing, or takes it back.
+    SetDisliked(bool),
+    /// Rates any song: `like`, `dislike` or `none`.
+    Rate {
+        uri: String,
+        rating: String,
+    },
+    /// Saves an album or playlist to the library, or takes it out.
+    SetSaved {
+        uri: String,
+        on: bool,
+    },
+    /// Subscribes to an artist, or unsubscribes.
+    SetSubscribed {
+        uri: String,
+        on: bool,
+    },
+    /// Adds a song to one of the account's playlists.
+    AddToPlaylist {
+        playlist: String,
+        track: String,
+    },
+    /// Makes a private playlist, with a song in it when given.
+    CreatePlaylist {
+        name: String,
+        track: Option<String>,
+    },
+    /// Takes a row (`set_video_id`) out of one of the account's playlists.
+    RemoveFromPlaylist {
+        playlist: String,
+        track: String,
+        set_video_id: String,
+    },
 }
 
 impl Command {
@@ -146,6 +210,24 @@ impl Command {
             Command::PlayTrack(_) => "playTrack",
             Command::Colors(_) => "colors",
             Command::Lyrics(_) => "lyrics",
+            Command::HomeChip(_) => "home",
+            Command::Browse(_) => "browse",
+            Command::SearchFiltered { .. } => "searchFiltered",
+            Command::SearchSuggestions(_) => "searchSuggestions",
+            Command::History => "history",
+            Command::PlaylistChoices(_) => "playlistChoices",
+            Command::Queue => "queue",
+            Command::QueueAdd { .. } => "queueAdd",
+            Command::QueueRemove(_) => "queueRemove",
+            Command::QueueJump(_) => "queueJump",
+            Command::StartRadio(_) => "startRadio",
+            Command::SetDisliked(_) => "setDisliked",
+            Command::Rate { .. } => "rate",
+            Command::SetSaved { .. } => "setSaved",
+            Command::SetSubscribed { .. } => "setSubscribed",
+            Command::AddToPlaylist { .. } => "addToPlaylist",
+            Command::CreatePlaylist { .. } => "createPlaylist",
+            Command::RemoveFromPlaylist { .. } => "removeFromPlaylist",
         }
     }
 
@@ -158,9 +240,24 @@ impl Command {
             | Command::Artist(s)
             | Command::PlayTrack(s)
             | Command::Colors(s)
-            | Command::Lyrics(s) => {
+            | Command::Lyrics(s)
+            | Command::HomeChip(s)
+            | Command::Browse(s)
+            | Command::SearchSuggestions(s)
+            | Command::PlaylistChoices(s)
+            | Command::QueueRemove(s)
+            | Command::QueueJump(s)
+            | Command::StartRadio(s) => {
                 json!([s])
             }
+            Command::SearchFiltered { query, filter, continuation } => json!([query, filter, continuation]),
+            Command::QueueAdd { uri, next } => json!([uri, next]),
+            Command::SetDisliked(on) => json!([on]),
+            Command::Rate { uri, rating } => json!([uri, rating]),
+            Command::SetSaved { uri, on } | Command::SetSubscribed { uri, on } => json!([uri, on]),
+            Command::AddToPlaylist { playlist, track } => json!([playlist, track]),
+            Command::CreatePlaylist { name, track } => json!([name, track]),
+            Command::RemoveFromPlaylist { playlist, track, set_video_id } => json!([playlist, track, set_video_id]),
             Command::Seek(ms) => json!([ms.max(0.0).round()]),
             Command::SetVolume(v) => json!([v.clamp(0.0, 1.0)]),
             Command::SetShuffle(on) | Command::SetLiked(on) | Command::SetMuted(on) => json!([on]),
@@ -185,6 +282,13 @@ impl Command {
                 | Command::Me
                 | Command::Colors(_)
                 | Command::Lyrics(_)
+                | Command::HomeChip(_)
+                | Command::Browse(_)
+                | Command::SearchFiltered { .. }
+                | Command::SearchSuggestions(_)
+                | Command::History
+                | Command::PlaylistChoices(_)
+                | Command::Queue
         )
     }
 

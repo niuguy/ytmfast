@@ -15,8 +15,14 @@ import {
   type Library,
   type Lyrics,
   type Me,
+  type Page,
   type PlayerState,
+  type PlaylistChoice,
+  type Queue,
+  type Rating,
   type RepeatMode,
+  type SearchFilter,
+  type SearchPage,
   type SearchResults,
   type Track,
 } from "./types";
@@ -55,6 +61,9 @@ export class DemoBackend implements Backend {
   #options: Required<DemoOptions>;
   #account = 0;
   #queue: Track[] = [];
+  /** Each queued track's entry id, beside `#queue`. */
+  #ids: string[] = [];
+  #nextId = 0;
   #index = 0;
   #timers = new Set<ReturnType<typeof setTimeout>>();
   #ending: ReturnType<typeof setTimeout> | undefined;
@@ -87,7 +96,39 @@ export class DemoBackend implements Backend {
   // ---- Data ----
 
   home(): Promise<Home> {
-    return this.#data(() => fixtures.homeFor(this.#signedIn() ? ACCOUNTS[this.#account].name : "there"), false);
+    return this.homeWith("");
+  }
+
+  homeWith(params: string): Promise<Home> {
+    return this.#data(() => fixtures.homeFor(this.#signedIn() ? ACCOUNTS[this.#account].name : "there", params), false);
+  }
+
+  browse(uri: string): Promise<Page> {
+    return this.#data(() => {
+      const found = fixtures.page(uri);
+      if (!found) throw backendError("E_NOT_FOUND", `no demo page ${uri}`);
+      return found;
+    }, false);
+  }
+
+  searchFiltered(query: string, filter: SearchFilter, continuation: string | null): Promise<SearchPage> {
+    return this.#data(() => fixtures.searchFiltered(query, filter, continuation), false);
+  }
+
+  searchSuggestions(query: string): Promise<string[]> {
+    return this.#data(() => fixtures.suggestions(query), false);
+  }
+
+  history(): Promise<Collection> {
+    return this.#data(() => fixtures.history(), true);
+  }
+
+  playlistChoices(_trackUri: string): Promise<PlaylistChoice[]> {
+    return this.#data(() => fixtures.playlistChoices(), true);
+  }
+
+  async queue(): Promise<Queue> {
+    return this.#queueNow();
   }
 
   search(query: string): Promise<SearchResults> {
@@ -217,7 +258,7 @@ export class DemoBackend implements Backend {
     this.#ready();
     const found = fixtures.collection(uri);
     if (!found || found.tracks.length === 0) throw backendError("E_NOT_FOUND", `no demo collection ${uri}`);
-    this.#queue = found.tracks;
+    this.#setQueue(found.tracks);
     const at = trackUri ? found.tracks.findIndex((t) => t.uri === trackUri) : -1;
     // YouTube Music plays the chosen song, free accounts too.
     this.#index = Math.max(0, at);
@@ -228,9 +269,107 @@ export class DemoBackend implements Backend {
     this.#ready();
     const track = findTrack(uri);
     if (!track) throw backendError("E_NOT_FOUND", `no demo track ${uri}`);
-    this.#queue = [track];
+    this.#setQueue([track]);
     this.#index = 0;
     this.#load("", {});
+  }
+
+  async queueAdd(uri: string, next: boolean): Promise<Queue> {
+    this.#ready();
+    const tracks = fixtures.tracksOf(uri);
+    if (tracks.length === 0) throw backendError("E_NOT_FOUND", `nothing to queue in ${uri}`);
+    const ids = tracks.map(() => this.#newId());
+    if (this.#queue.length === 0) {
+      this.#queue = tracks;
+      this.#ids = ids;
+      this.#index = 0;
+      this.#load(uri, {});
+    } else {
+      const at = next ? this.#index + 1 : this.#queue.length;
+      this.#queue = [...this.#queue.slice(0, at), ...tracks, ...this.#queue.slice(at)];
+      this.#ids = [...this.#ids.slice(0, at), ...ids, ...this.#ids.slice(at)];
+      this.#update({ canNext: true });
+    }
+    return this.#queueNow();
+  }
+
+  async queueRemove(id: string): Promise<Queue> {
+    this.#ready();
+    const at = this.#ids.indexOf(id);
+    if (at < 0) throw backendError("E_NOT_FOUND", `no queue entry ${id}`);
+    const playing = at === this.#index;
+    this.#queue = this.#queue.filter((_, i) => i !== at);
+    this.#ids = this.#ids.filter((_, i) => i !== at);
+    if (at < this.#index) this.#index -= 1;
+    if (playing) {
+      if (this.#queue.length === 0) this.#player.set({ ...EMPTY_PLAYER, at: Date.now() });
+      else {
+        this.#index = Math.min(this.#index, this.#queue.length - 1);
+        this.#load(this.#player().contextUri, {});
+      }
+    }
+    return this.#queueNow();
+  }
+
+  async queueJump(id: string): Promise<Queue> {
+    this.#ready();
+    if (this.#player().ad) throw backendError("E_AD", "an ad is playing");
+    const at = this.#ids.indexOf(id);
+    if (at < 0) throw backendError("E_NOT_FOUND", `no queue entry ${id}`);
+    this.#index = at;
+    this.#load(this.#player().contextUri, {});
+    return this.#queueNow();
+  }
+
+  async startRadio(uri: string): Promise<void> {
+    this.#ready();
+    if (this.#player().ad) throw backendError("E_AD", "an ad is playing");
+    const seed = fixtures.tracksOf(uri);
+    if (seed.length === 0) throw backendError("E_NOT_FOUND", `no radio for ${uri}`);
+    // The seed, then every other song the demo has.
+    const rest = fixtures.tracksOf(fixtures.LIKED_URI).concat(fixtures.tracksOf("ytm:album:neonorchard"), fixtures.tracksOf("ytm:album:saltlines"));
+    this.#setQueue([...seed, ...rest.filter((t) => !seed.some((s) => s.uri === t.uri))]);
+    this.#index = 0;
+    this.#load(`ytm:mix:RD${uri.split(":")[2] ?? ""}`, {});
+  }
+
+  async setDisliked(on: boolean): Promise<void> {
+    this.#ready();
+    if (!this.#player().trackUri) throw backendError("E_NOTHING_LOADED", "nothing to dislike");
+    this.#update({ disliked: on, liked: on ? false : this.#player().liked });
+    if (on) fixtures.setLikedSong(this.#player().trackUri, false);
+  }
+
+  async rate(trackUri: string, rating: Rating): Promise<void> {
+    this.#ready();
+    fixtures.setLikedSong(trackUri, rating === "like");
+    if (this.#player().trackUri === trackUri) this.#update({ liked: rating === "like", disliked: rating === "dislike" });
+  }
+
+  async setSaved(uri: string, on: boolean): Promise<void> {
+    this.#ready();
+    fixtures.setSaved(uri, on);
+  }
+
+  async setSubscribed(artistUri: string, on: boolean): Promise<void> {
+    this.#ready();
+    fixtures.setSubscribed(artistUri, on);
+  }
+
+  async addToPlaylist(playlistUri: string, trackUri: string): Promise<void> {
+    this.#ready();
+    if (!fixtures.addToPlaylist(playlistUri, trackUri)) throw backendError("E_NOT_FOUND", `cannot add to ${playlistUri}`);
+  }
+
+  async createPlaylist(name: string, trackUri: string | null): Promise<string> {
+    this.#ready();
+    if (!name.trim()) throw backendError("E_BAD_ARGS", "a playlist needs a name");
+    return fixtures.createPlaylist(name.trim(), trackUri);
+  }
+
+  async removeFromPlaylist(playlistUri: string, _trackUri: string, uid: string): Promise<void> {
+    this.#ready();
+    if (!fixtures.removeFromPlaylist(playlistUri, uid)) throw backendError("E_NOT_FOUND", `no row ${uid} in ${playlistUri}`);
   }
 
   // ---- The account ----
@@ -254,7 +393,7 @@ export class DemoBackend implements Backend {
   async signOut(): Promise<void> {
     if (this.#ending) clearTimeout(this.#ending);
     this.#account = (this.#account + 1) % ACCOUNTS.length;
-    this.#queue = [];
+    this.#setQueue([]);
     this.#signedIn.set(false);
     this.#player.set({ ...EMPTY_PLAYER, at: Date.now() });
   }
@@ -274,6 +413,30 @@ export class DemoBackend implements Backend {
   #ready(): void {
     if (this.#health().status !== "ready") throw backendError("E_NOT_READY", "the player is starting");
     if (this.#signedIn() !== true) throw backendError("E_SIGNED_OUT", "no account is signed in");
+  }
+
+  #newId(): string {
+    this.#nextId += 1;
+    return String(this.#nextId);
+  }
+
+  /** Queues `tracks` in place of the queue, each with a new entry id. */
+  #setQueue(tracks: Track[]): void {
+    this.#queue = tracks;
+    this.#ids = tracks.map(() => this.#newId());
+  }
+
+  #queueNow(): Queue {
+    const items = this.#queue.map((t, i) => ({
+      id: this.#ids[i],
+      uri: t.uri,
+      name: t.name,
+      artists: t.artists,
+      image: t.image,
+      durationMs: t.durationMs,
+      current: i === this.#index && !!this.#player().trackUri,
+    }));
+    return { items, current: items.findIndex((i) => i.current), autoplay: [] };
   }
 
   /** The position now. */
@@ -332,6 +495,7 @@ export class DemoBackend implements Backend {
       durationMs: track.durationMs,
       shuffleAvailable: true,
       liked: fixtures.collection(fixtures.LIKED_URI)?.tracks.some((t) => t.uri === track.uri) ?? false,
+      disliked: false,
       canNext: this.#queue.length > 1,
       canPrevious: true,
       ad: false,

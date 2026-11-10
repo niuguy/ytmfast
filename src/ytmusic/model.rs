@@ -23,12 +23,15 @@ pub struct Item {
     pub subtitle: String,
     /// The cover URL, empty when it has none.
     pub image: String,
+    /// A page's colour (`#rrggbb`, a mood or genre's stripe), or empty.
+    pub color: String,
 }
 
 impl Item {
-    /// Whether the app has a page for it (a track has none: it plays).
+    /// Whether the app has a page for it (a track or a mix has none: it
+    /// plays).
     pub fn opens(&self) -> bool {
-        matches!(self.kind.as_str(), "playlist" | "album" | "artist" | "collection")
+        matches!(self.kind.as_str(), "playlist" | "album" | "artist" | "collection" | "page" | "history")
     }
 }
 
@@ -74,6 +77,14 @@ pub struct Header {
     pub image: String,
     /// Its description, as plain text.
     pub description: String,
+    /// Whether it is saved in the library; null when it cannot be (Liked
+    /// Music, an artist, a playlist of one's own).
+    pub saved: Option<bool>,
+    /// Whether it is a playlist of the account's own (its songs can be
+    /// taken out).
+    pub editable: bool,
+    /// Whether the account subscribes to the artist; null for the others.
+    pub subscribed: Option<bool>,
 }
 
 /// A playlist, album, artist or Liked Songs: its header, tracks and, for an
@@ -95,10 +106,90 @@ pub struct Collection {
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Section {
-    /// The row's title.
+    /// The row's title (may be empty for a row of buttons).
     pub title: String,
+    /// `cards` (covers in a row), or `buttons` (pages, as chips).
+    pub kind: String,
     /// Its cards.
     pub items: Vec<Item>,
+}
+
+/// One of Home's filters ("Relax", "Workout"): Home with its `params`.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Chip {
+    /// Its label.
+    pub title: String,
+    /// What Home is asked with to show it.
+    pub params: String,
+    /// Whether Home shows it now.
+    pub selected: bool,
+}
+
+/// A browse page (Explore, charts, new releases, moods and genres, a mood).
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Page {
+    /// Its title.
+    pub title: String,
+    /// Its rows.
+    pub sections: Vec<Section>,
+}
+
+/// One entry of the play queue.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct QueueItem {
+    /// The page's id of the entry (it removes it, or plays it).
+    pub id: String,
+    /// The song (`ytm:track:…`).
+    pub uri: String,
+    /// Its title.
+    pub name: String,
+    /// Its artists.
+    pub artists: String,
+    /// Its cover.
+    pub image: String,
+    /// Its length, in milliseconds.
+    pub duration_ms: f64,
+    /// Whether it is the one playing.
+    pub current: bool,
+}
+
+/// The play queue.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Queue {
+    /// What is queued, in order.
+    pub items: Vec<QueueItem>,
+    /// The index of the one playing, or -1.
+    pub current: f64,
+    /// What autoplay plays after the queue.
+    pub autoplay: Vec<QueueItem>,
+}
+
+/// One page of a search for one kind of thing.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SearchPage {
+    /// Songs or videos found (for those kinds).
+    pub tracks: Vec<Track>,
+    /// Albums, artists or playlists found (for those kinds).
+    pub items: Vec<Item>,
+    /// Where the next page starts; empty at the end.
+    pub continuation: String,
+}
+
+/// A playlist a song can be added to.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PlaylistChoice {
+    /// The playlist (`ytm:playlist:…`).
+    pub uri: String,
+    /// Its name.
+    pub name: String,
+    /// Its line under the name ("6 tracks").
+    pub subtitle: String,
 }
 
 /// The home page.
@@ -109,6 +200,8 @@ pub struct Home {
     pub greeting: String,
     /// The rows of cards.
     pub sections: Vec<Section>,
+    /// Its filters.
+    pub chips: Vec<Chip>,
 }
 
 /// What a search found.
@@ -251,6 +344,8 @@ pub struct Player {
     pub muted: bool,
     /// Whether the track is saved to Liked Songs.
     pub liked: bool,
+    /// Whether the track is disliked.
+    pub disliked: bool,
     /// Whether there is a next track.
     pub can_next: bool,
     /// Whether there is a previous track.

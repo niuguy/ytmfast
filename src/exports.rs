@@ -15,7 +15,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::ytmusic::{
-    Collection, CoverColor, EngineError, ErrorCode, Health, Home, Library, Lyrics, Me, Player, Repeat, SearchResults, Session, Snapshot,
+    Collection, CoverColor, EngineError, ErrorCode, Health, Home, Library, Lyrics, Me, Page, Player, PlaylistChoice, Queue, Repeat,
+    SearchPage, SearchResults, Session, Snapshot,
     bridge::{self, Command},
     engine,
 };
@@ -211,7 +212,112 @@ impl YTMusic {
         data(this, Command::Lyrics(track_uri)).await
     }
 
+    /// Home filtered by one of its chips (`params`; "" is Home itself).
+    pub async fn home_with(this: Instance<Self>, params: String) -> Result<Home, String> {
+        if params.is_empty() { data(this, Command::Home).await } else { data(this, Command::HomeChip(params)).await }
+    }
+
+    /// A browse page by URI (`ytm:page:…`): Explore, charts, new releases,
+    /// moods and genres, one mood or genre.
+    pub async fn browse(this: Instance<Self>, uri: String) -> Result<Page, String> {
+        data(this, Command::Browse(uri)).await
+    }
+
+    /// One page of a search for one kind (`songs`, `videos`, `albums`,
+    /// `artists`, `playlists`), or the page after `continuation`.
+    pub async fn search_filtered(
+        this: Instance<Self>,
+        query: String,
+        filter: String,
+        continuation: Option<String>,
+    ) -> Result<SearchPage, String> {
+        data(this, Command::SearchFiltered { query, filter, continuation }).await
+    }
+
+    /// Suggestions for a query being typed.
+    pub async fn search_suggestions(this: Instance<Self>, query: String) -> Result<Vec<String>, String> {
+        data(this, Command::SearchSuggestions(query)).await
+    }
+
+    /// What the signed-in account played, newest first.
+    pub async fn history(this: Instance<Self>) -> Result<Collection, String> {
+        data(this, Command::History).await
+    }
+
+    /// The account's playlists a song can be added to.
+    pub async fn playlist_choices(this: Instance<Self>, track_uri: String) -> Result<Vec<PlaylistChoice>, String> {
+        data(this, Command::PlaylistChoices(track_uri)).await
+    }
+
+    /// The play queue.
+    pub async fn queue(this: Instance<Self>) -> Result<Queue, String> {
+        data(this, Command::Queue).await
+    }
+
     // --- Controls --------------------------------------------------------------
+
+    /// Puts a song, album, playlist or mix in the queue: after the one
+    /// playing (`next`), or at the end. Answers the queue.
+    pub async fn queue_add(this: Instance<Self>, uri: String, next: bool) -> Result<Queue, String> {
+        data(this, Command::QueueAdd { uri, next }).await
+    }
+
+    /// Takes the queue's entry `id` out of it. Answers the queue.
+    pub async fn queue_remove(this: Instance<Self>, id: String) -> Result<Queue, String> {
+        data(this, Command::QueueRemove(id)).await
+    }
+
+    /// Plays the queue's entry `id`. Answers the queue.
+    pub async fn queue_jump(this: Instance<Self>, id: String) -> Result<Queue, String> {
+        data(this, Command::QueueJump(id)).await
+    }
+
+    /// Plays the radio of a song, album, playlist or artist.
+    pub async fn start_radio(this: Instance<Self>, uri: String) -> Result<(), String> {
+        control(this, Command::StartRadio(uri)).await
+    }
+
+    /// Dislikes the song playing, or takes the dislike back.
+    pub async fn set_disliked(this: Instance<Self>, on: bool) -> Result<(), String> {
+        control(this, Command::SetDisliked(on)).await
+    }
+
+    /// Rates any song: `like`, `dislike` or `none`.
+    pub async fn rate(this: Instance<Self>, uri: String, rating: String) -> Result<(), String> {
+        control(this, Command::Rate { uri, rating }).await
+    }
+
+    /// Saves an album or a playlist to the library, or takes it out.
+    pub async fn set_saved(this: Instance<Self>, uri: String, on: bool) -> Result<(), String> {
+        control(this, Command::SetSaved { uri, on }).await
+    }
+
+    /// Subscribes to an artist, or unsubscribes.
+    pub async fn set_subscribed(this: Instance<Self>, uri: String, on: bool) -> Result<(), String> {
+        control(this, Command::SetSubscribed { uri, on }).await
+    }
+
+    /// Adds a song to one of the account's playlists.
+    pub async fn add_to_playlist(this: Instance<Self>, playlist: String, track: String) -> Result<(), String> {
+        control(this, Command::AddToPlaylist { playlist, track }).await
+    }
+
+    /// Makes a private playlist named `name`, with the song `track` in it
+    /// when given; answers its URI.
+    pub async fn create_playlist(this: Instance<Self>, name: String, track: Option<String>) -> Result<String, String> {
+        data(this, Command::CreatePlaylist { name, track }).await
+    }
+
+    /// Takes the row `setVideoId` (the song `track`) out of one of the
+    /// account's playlists.
+    pub async fn remove_from_playlist(
+        this: Instance<Self>,
+        playlist: String,
+        track: String,
+        set_video_id: String,
+    ) -> Result<(), String> {
+        control(this, Command::RemoveFromPlaylist { playlist, track, set_video_id }).await
+    }
 
     /// Plays or pauses.
     pub async fn toggle(this: Instance<Self>) -> Result<(), String> {

@@ -11,8 +11,10 @@
 // `trackOf`, `homeOf`, ...), so a change of the web player is mended here.
 //
 // Ads: the bridge never blocks, hides, skips or mutes an ad, and never changes
-// the volume on its own. While an ad plays it refuses seek, next, previous,
-// setLiked, playContext and playTrack (E_AD).
+// the volume on its own. While an ad plays it refuses what would cut it short
+// or rate it: seek, next, previous, setLiked, setDisliked, playContext,
+// playTrack, queueJump and startRadio (E_AD). Changing the queue after it is
+// allowed.
 //
 // SINGLE SOURCE OF TRUTH. This file is what the Rust engine `include_str!`s
 // (src/ytmusic/bridge.rs). `src/bridge/source.ts` is GENERATED from it so the
@@ -42,7 +44,7 @@
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 4;
+  const REVISION = 5;
   const ORIGIN = "https://music.youtube.com";
   const LIKED_ID = "LM";
   const LIKED_URI = "ytm:collection:" + LIKED_ID;
@@ -61,6 +63,10 @@
     repeat: ".repeat",
     like: "ytmusic-like-button-renderer",
     likeButton: ["#button-shape-like button", ".like", "#button-shape-like"],
+    dislikeButton: ["#button-shape-dislike button", ".dislike", "#button-shape-dislike"],
+    // A menu item: its element carries the page's own command handler, which
+    // runs the queue's commands (play next, add to queue, remove).
+    commandHost: "ytmusic-menu-service-item-renderer",
     barImage: "img.image, .thumbnail img",
     barTitle: ".title",
     barByline: ".byline",
@@ -188,7 +194,25 @@
     }
     if (type === PAGE_TYPE.LIBRARY_ARTIST) return { uri: "ytm:artist:" + id.replace(/^MPLA/, ""), kind: "artist" };
     if (type === PAGE_TYPE.ARTIST || type === PAGE_TYPE.USER_CHANNEL || /^UC/.test(id)) return { uri: "ytm:artist:" + id, kind: "artist" };
+    // A page of sections (Explore, charts, a mood or genre): `browseId`, and
+    // the `params` that pick its contents.
+    if (/^FE/.test(id)) return { uri: pageUri(id, browse.params), kind: "page" };
     return null;
+  };
+
+  // A browse page's URI (`ytm:page:<browseId>[:<params>]`) and back.
+  const pageUri = (browseId, params) => "ytm:page:" + browseId + (params ? ":" + params : "");
+  const pageOfUri = (uri) => {
+    const m = /^ytm:page:([A-Za-z0-9_-]+)(?::(.+))?$/.exec(String(uri || ""));
+    if (!m) throw fail("E_BAD_ARGS", "not a page: " + uri);
+    return m[2] ? { browseId: m[1], params: m[2] } : { browseId: m[1] };
+  };
+
+  // `#rrggbb` of an ARGB number (a navigation button's stripe).
+  const colorOf = (argb) => {
+    const n = Number(argb);
+    if (!isFinite(n) || n <= 0) return "";
+    return "#" + (n & 0xffffff).toString(16).padStart(6, "0");
   };
 
   const flexColumns = (r) => ((r && r.flexColumns) || []).map((c) => (c && c.musicResponsiveListItemFlexColumnRenderer && c.musicResponsiveListItemFlexColumnRenderer.text) || null);
@@ -249,6 +273,13 @@
   // null. Takes `musicTwoRowItemRenderer` and `musicResponsiveListItemRenderer`.
   const itemOf = (r) => {
     if (!r) return null;
+    if (r.buttonText) {
+      // A navigation button (`musicNavigationButtonRenderer`): a page to open.
+      const target = targetOf(r.clickCommand || r.navigationEndpoint);
+      const name = text(r.buttonText);
+      if (!target || !name) return null;
+      return { uri: target.uri, kind: target.kind, name, subtitle: "", image: "", color: colorOf(dig(r, "solid.leftStripeColor")) };
+    }
     if (r.flexColumns) {
       const columns = flexColumns(r);
       const name = text(columns[0]);
@@ -269,7 +300,7 @@
   // Every item (card or row) of a shelf's `contents`.
   const itemsOf = (contents) =>
     (contents || [])
-      .map((c) => itemOf((c && (c.musicTwoRowItemRenderer || c.musicResponsiveListItemRenderer || c.musicMultiRowListItemRenderer)) || null))
+      .map((c) => itemOf((c && (c.musicTwoRowItemRenderer || c.musicResponsiveListItemRenderer || c.musicMultiRowListItemRenderer || c.musicNavigationButtonRenderer)) || null))
       .filter(Boolean);
 
   const dedupe = (items) => {
@@ -279,13 +310,45 @@
 
   const greetingAt = (hour) => (hour < 5 ? "Good evening" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
 
-  // Home's sections (`browse` FEmusic_home, and its continuations).
-  const sectionsOf = (json) =>
-    findAll(json, "musicCarouselShelfRenderer")
-      .concat(findAll(json, "musicImmersiveCarouselShelfRenderer"))
-      .map((shelf) => ({ title: text(find(shelf.header, "title")), items: itemsOf(shelf.contents) }))
-      .filter((s) => s.title && s.items.length);
-  const homeOf = (json, hour) => ({ greeting: greetingAt(hour == null ? 12 : hour), sections: sectionsOf(json) });
+  // The rows of a page (Home, Explore, a chart, a mood), in page order:
+  // carousels and grids. A row of navigation buttons is `kind: "buttons"`
+  // (drawn as a wrap of chips), others `"cards"`. A grid may have no title
+  // (Explore's own New releases / Charts / Moods & genres).
+  const SHELVES = ["musicCarouselShelfRenderer", "musicImmersiveCarouselShelfRenderer", "gridRenderer"];
+  const sectionsOf = (json) => {
+    const shelves = [];
+    const walk = (o, depth) => {
+      if (!o || typeof o !== "object" || depth > 40) return;
+      if (!Array.isArray(o)) {
+        const key = SHELVES.find((k) => Object.prototype.hasOwnProperty.call(o, k));
+        if (key) {
+          shelves.push(o[key]);
+          return;
+        }
+      }
+      for (const k in o) walk(o[k], depth + 1);
+    };
+    walk(json, 0);
+    return shelves
+      .map((shelf) => {
+        const items = itemsOf(shelf.contents || shelf.items);
+        const buttons = items.length > 0 && items.every((i) => i.kind === "page");
+        return { title: text(find(shelf.header, "title")), kind: buttons ? "buttons" : "cards", items };
+      })
+      .filter((s) => s.items.length && (s.title || s.kind === "buttons"));
+  };
+  // Home's filter chips ("Relax", "Workout"): each is Home with its `params`.
+  const chipsOf = (json) =>
+    findAll(json, "chipCloudChipRenderer")
+      .map((c) => ({ title: text(c.text), params: dig(c, "navigationEndpoint.browseEndpoint.params") || "", selected: !!c.isSelected }))
+      .filter((c) => c.title && c.params);
+  const homeOf = (json, hour) => ({ greeting: greetingAt(hour == null ? 12 : hour), sections: sectionsOf(json), chips: chipsOf(json) });
+  // A browse page (Explore, charts, new releases, moods and genres, one
+  // mood): its title and rows.
+  const pageOf = (json, fallbackTitle) => {
+    const h = find(json.header || {}, "title") || dig(find(json, "musicHeaderRenderer"), "title");
+    return { title: text(h) || fallbackTitle || "", sections: sectionsOf(json.contents || json) };
+  };
 
   // The continuation token of a list or a page, if it has more.
   const continuationOf = (json) =>
@@ -373,6 +436,12 @@
   };
 
   // An album or a playlist page (`browse` MPREb_… or VL…).
+  // Whether the page's collection is in the library (its bookmark toggle);
+  // null when it has none (Liked Music, a page of one's own).
+  const savedOf = (header) => {
+    const toggle = findAll(header, "toggleButtonRenderer").find((b) => /BOOKMARK|LIBRARY/.test(dig(b, "defaultIcon.iconType") || ""));
+    return toggle ? !!toggle.isToggled : null;
+  };
   const collectionOf = (json, uri, kind) => {
     const h = headerOf(json);
     const header = h.header ? headerOf(h.header) : h;
@@ -387,7 +456,18 @@
     const total = countOf(text(header.secondSubtitle)) || countOf(text(header.subtitle)) || tracks.length;
     return {
       collection: {
-        header: { uri, kind, name: name || (kind === "collection" ? "Liked Music" : ""), subtitle, image, description: description.trim() },
+        header: {
+          uri,
+          kind,
+          name: name || (kind === "collection" ? "Liked Music" : ""),
+          subtitle,
+          image,
+          description: description.trim(),
+          saved: kind === "collection" ? null : savedOf(h),
+          // A playlist of the account's own: its songs can be removed.
+          editable: !!find(json, "musicEditablePlaylistDetailHeaderRenderer") && kind === "playlist",
+          subscribed: null,
+        },
         tracks,
         releases: [],
         total: Math.max(total, tracks.length),
@@ -416,10 +496,29 @@
     const releases = dedupe(findAll(json, "musicCarouselShelfRenderer").flatMap((shelf) => itemsOf(shelf.contents)).filter((i) => i.kind === "album"));
     const songsBrowse = dig(runsOf(songsShelf.title)[0], "navigationEndpoint.browseEndpoint.browseId") || "";
     const play = findAll(h, "watchEndpoint").concat(findAll(h, "watchPlaylistEndpoint")).find((w) => w && w.playlistId) || null;
+    // The artist's radio (its "Mix" button).
+    const radio = findAll(h.startRadioButton, "watchPlaylistEndpoint").concat(findAll(h.startRadioButton, "watchEndpoint")).find((w) => w && w.playlistId) || null;
+    const subscribe = find(h, "subscribeButtonRenderer");
     return {
-      collection: { header: { uri, kind: "artist", name, subtitle, image: thumbOf(h.thumbnail, 544), description: description.trim() }, tracks, releases, total: tracks.length },
+      collection: {
+        header: {
+          uri,
+          kind: "artist",
+          name,
+          subtitle,
+          image: thumbOf(h.thumbnail, 544),
+          description: description.trim(),
+          saved: null,
+          editable: false,
+          subscribed: subscribe ? !!subscribe.subscribed : null,
+        },
+        tracks,
+        releases,
+        total: tracks.length,
+      },
       songsPlaylistId: songsBrowse.replace(/^VL/, ""),
       play: play ? { playlistId: play.playlistId, params: play.params || "" } : null,
+      radio: radio ? { playlistId: radio.playlistId, params: radio.params || "" } : null,
     };
   };
 
@@ -447,6 +546,90 @@
     const id = String(datasyncId || "").split("||")[0] || handle || name;
     return { id, name, username: handle || name, image: thumbOf(h.accountPhoto, 88) };
   };
+
+  // One entry of the play queue (the page's own, `playlistPanelVideoRenderer`,
+  // or one wrapped with its song/video counterpart), or null.
+  const queueRendererOf = (entry) =>
+    (entry && (entry.playlistPanelVideoRenderer || dig(entry, "playlistPanelVideoWrapperRenderer.primaryRenderer.playlistPanelVideoRenderer"))) || null;
+  // The queue's entry: its `id` (the page's item id, which removes it), the
+  // song, and whether it is the one playing.
+  const queueItemOf = (entry, index) => {
+    const r = queueRendererOf(entry);
+    if (!r || !r.videoId) return null;
+    const removal = find(r.menu, "removeFromQueueEndpoint");
+    const byline = runsOf(r.longBylineText || r.shortBylineText);
+    const artists = byline.filter((run) => /ARTIST|USER_CHANNEL/.test(pageTypeOf(run.navigationEndpoint))).map((run) => run.text);
+    return {
+      id: String((removal && removal.itemId) != null ? removal.itemId : "#" + index),
+      uri: "ytm:track:" + r.videoId,
+      name: text(r.title),
+      artists: artists.join(", ") || text(r.shortBylineText).split(/\s+[•·]\s+/)[0] || "",
+      image: thumbOf(r.thumbnail, 120),
+      durationMs: clockMs(text(r.lengthText)),
+      current: !!r.selected,
+    };
+  };
+  // The play queue from the page's queue state: what is queued (the one
+  // playing marked), and what autoplay adds after it.
+  const queueOf = (state) => {
+    const items = ((state && state.items) || []).map(queueItemOf).filter(Boolean);
+    const at = Number(state && state.selectedItemIndex);
+    if (isFinite(at) && at >= 0 && at < items.length) items.forEach((it, i) => (it.current = i === at));
+    return {
+      items,
+      current: items.findIndex((it) => it.current),
+      autoplay: ((state && state.automixItems) || []).map((e, i) => queueItemOf(e, 10000 + i)).filter(Boolean).slice(0, 25),
+    };
+  };
+
+  // Search with a filter: the params YouTube Music's own chips carry.
+  const SEARCH_FILTERS = {
+    songs: "EgWKAQIIAWoSEAUQChAJEAMQBBAQEBUQDhAR",
+    videos: "EgWKAQIQAWoSEAUQChAJEAMQBBAQEBUQDhAR",
+    albums: "EgWKAQIYAWoSEAUQChAJEAMQBBAQEBUQDhAR",
+    artists: "EgWKAQIgAWoSEAUQChAJEAMQBBAQEBUQDhAR",
+    playlists: "EgeKAQQoAEABahIQBRAKEAkQAxAEEBAQFRAOEBE%3D",
+  };
+  // A page of a filtered search (or of its continuation): tracks for songs
+  // and videos, items for the rest, and where it continues ("" at the end).
+  const searchPageOf = (json, filter) => {
+    const rows = findAll(json, "musicResponsiveListItemRenderer");
+    const tracks = [];
+    const items = [];
+    rows.forEach((r, i) => {
+      if (!isMusic(r)) return;
+      const t = filter === "songs" || filter === "videos" ? trackOf(r, i) : null;
+      if (t) tracks.push(Object.assign(t, { uid: "" }));
+      else {
+        const item = itemOf(r);
+        if (item && item.kind !== "track") items.push(item);
+      }
+    });
+    return { tracks: dedupe(tracks), items: dedupe(items), continuation: continuationOf(json.continuationContents || json) };
+  };
+  // Suggestions for what is being typed: the queries YouTube Music offers.
+  const suggestionsOf = (json) =>
+    findAll(json, "searchSuggestionRenderer")
+      .map((s) => dig(s, "navigationEndpoint.searchEndpoint.query") || text(s.suggestion))
+      .filter(Boolean)
+      .slice(0, 8);
+
+  const HISTORY_URI = "ytm:history:all";
+  // What was played, newest first (`browse` FEmusic_history, in shelves by
+  // day): one list.
+  const historyOf = (json) => {
+    const tracks = findAll(json, "musicResponsiveListItemRenderer")
+      .map((r, i) => trackOf(r, i))
+      .filter(Boolean);
+    return { header: { uri: HISTORY_URI, kind: "history", name: "History", subtitle: "", image: "", description: "", saved: null, editable: false, subscribed: null }, tracks, releases: [], total: tracks.length };
+  };
+
+  // The playlists a song can be added to (`playlist/get_add_to_playlist`):
+  // the account's own, without Liked Music (liking adds there).
+  const playlistChoicesOf = (json) =>
+    findAll(json, "playlistAddToOptionRenderer")
+      .filter((o) => o.playlistId && o.playlistId !== LIKED_ID)
+      .map((o) => ({ uri: "ytm:playlist:" + o.playlistId, name: text(o.title), subtitle: text(o.shortBylineText) }));
 
   // The lyrics tab of a song (`next`): the browse id of its lyrics, or "".
   const lyricsBrowseIdOf = (json) => {
@@ -744,8 +927,9 @@
       });
 
     const api = {
-      async home() {
-        const first = await browse({ browseId: "FEmusic_home" });
+      // Home, or Home filtered by one of its chips (`params`).
+      async home(params) {
+        const first = await browse(params ? { browseId: "FEmusic_home", params: String(params) } : { browseId: "FEmusic_home" });
         const home = homeOf(first, new Date(now()).getHours());
         // One more page of sections, when there is one.
         const token = continuationOf(dig(first, "contents.singleColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer") || {});
@@ -763,6 +947,44 @@
         const query = String(term || "").trim();
         if (!query) return { tracks: [], artists: [], albums: [], playlists: [] };
         return searchOf(await innertube("search", { query }));
+      },
+
+      // One page of a search for one kind (`filter`: songs, videos, albums,
+      // artists, playlists), or the next page after `continuation`.
+      async searchFiltered(term, filter, continuation) {
+        if (!Object.prototype.hasOwnProperty.call(SEARCH_FILTERS, filter)) throw fail("E_BAD_ARGS", "search filter " + filter);
+        if (continuation) return searchPageOf(await innertube("search", { continuation: String(continuation) }), filter);
+        const query = String(term || "").trim();
+        if (!query) return { tracks: [], items: [], continuation: "" };
+        return searchPageOf(await innertube("search", { query, params: SEARCH_FILTERS[filter] }), filter);
+      },
+
+      // What YouTube Music suggests for a query being typed.
+      async searchSuggestions(term) {
+        const input = String(term || "");
+        if (!input.trim()) return [];
+        return suggestionsOf(await innertube("music/get_search_suggestions", { input }));
+      },
+
+      // A browse page (`ytm:page:…`): Explore, charts, new releases, moods
+      // and genres, one mood or genre.
+      async browse(uri) {
+        const target = pageOfUri(uri);
+        return pageOf(await browse(target), target.browseId === "FEmusic_explore" ? "Explore" : "");
+      },
+
+      // What the account played, newest first.
+      async history() {
+        needSignIn("History");
+        return historyOf(await browse({ browseId: "FEmusic_history" }));
+      },
+
+      // The account's playlists a song can be added to.
+      async playlistChoices(trackUri) {
+        needSignIn("Playlists");
+        const track = parseUri(trackUri);
+        if (track.kind !== "track") throw fail("E_BAD_ARGS", "not a track: " + trackUri);
+        return playlistChoicesOf(await innertube("playlist/get_add_to_playlist", { videoIds: [track.id] }));
       },
 
       async playlist(uri) {
@@ -791,7 +1013,7 @@
       async artist(uri) {
         const { id } = parseUri(uri);
         const page = artistOf(await browse({ browseId: id }), uri);
-        shared.artists[id] = { songs: page.songsPlaylistId, play: page.play };
+        shared.artists[id] = { songs: page.songsPlaylistId, play: page.play, radio: page.radio };
         return page.collection;
       },
 
@@ -874,6 +1096,44 @@
       return state === 1 || state === 3;
     };
     const readRepeat = () => repeatOf(bar() && bar().getAttribute("repeat-mode"));
+    const readDisliked = () => {
+      const like = inBar(SEL.like);
+      return !!like && like.getAttribute("like-status") === "DISLIKE";
+    };
+
+    // The page's play queue: its service (`ytmusic-app`'s `queue`) and the
+    // queue's state in its store.
+    const queueApi = () => {
+      const app = q(SEL.app);
+      const api = app && app.queue;
+      if (!api || !api.store || typeof api.store.getState !== "function") throw fail("E_NOT_READY", "the page has no queue");
+      return api;
+    };
+    const queueState = () => queueApi().store.getState().queue || { items: [] };
+    const queueEntry = (id) => {
+      const items = queueState().items || [];
+      const entry = items.find((e, i) => {
+        const it = queueItemOf(e, i);
+        return it && it.id === String(id);
+      });
+      if (!entry) throw fail("E_NOT_FOUND", "no queue entry " + id);
+      return entry;
+    };
+    // Runs one of the page's own commands (`queueAddEndpoint`, …) through a
+    // menu item's command handler, as choosing it in the page's menu would.
+    const runCommand = async (command) => {
+      let host = shared.commandHost;
+      if (!host || host.isConnected === false) {
+        host = doc.createElement(SEL.commandHost);
+        host.hidden = true;
+        const parent = doc.body || doc.documentElement;
+        (parent.appendChild || parent.append).call(parent, host);
+        shared.commandHost = host;
+      }
+      if (typeof host.handleCommand !== "function") throw fail("E_NOT_READY", "the page cannot run " + Object.keys(command)[0]);
+      return host.handleCommand(command);
+    };
+
     const readLiked = () => {
       const like = inBar(SEL.like);
       return !!like && like.getAttribute("like-status") === "LIKE";
@@ -913,6 +1173,7 @@
         volume: readVolume(),
         muted: !!call("isMuted"),
         liked: readLiked(),
+        disliked: readDisliked(),
         canNext: !ad && (!next || !isDisabled(next)),
         canPrevious: !ad && (!previous || !isDisabled(previous)),
         ad,
@@ -1019,6 +1280,7 @@
       const { kind, id } = parseUri(uri);
       if (kind === "playlist" || kind === "mix") return { playlistId: id };
       if (kind === "collection") return { playlistId: LIKED_ID };
+      if (kind === "history") return {};
       if (kind === "album") {
         if (!shared.albumLists[id]) await api.album(uri);
         const playlistId = shared.albumLists[id];
@@ -1130,8 +1392,168 @@
           if (track.kind !== "track") throw fail("E_BAD_ARGS", "not a track: " + trackUri);
           target.videoId = track.id;
         }
-        shared.asked = { uri, list: target.playlistId };
+        if (!target.playlistId && !target.videoId) throw fail("E_BAD_ARGS", "nothing to play in " + uri);
+        shared.asked = target.playlistId ? { uri, list: target.playlistId } : null;
         return watch(target);
+      },
+
+      // The play queue (see `queueOf`).
+      async queue() {
+        return queueOf(queueState());
+      },
+
+      // Puts a song, album, playlist or mix in the queue: after the one
+      // playing (`next`), or at its end. An empty queue starts playing it.
+      // (Allowed during an ad: it changes what comes after, not the ad.)
+      async queueAdd(uri, next) {
+        const { kind, id } = parseUri(uri);
+        let target;
+        if (kind === "track") target = { videoId: id, onEmptyQueue: { watchEndpoint: { videoId: id } } };
+        else {
+          const { playlistId } = await playTarget(uri);
+          if (!playlistId) throw fail("E_BAD_ARGS", "cannot queue " + uri);
+          target = { playlistId, onEmptyQueue: { watchEndpoint: { playlistId } } };
+        }
+        const before = queueState().items.length;
+        await runCommand({ queueAddEndpoint: { queueTarget: target, queueInsertPosition: next ? "INSERT_AFTER_CURRENT_VIDEO" : "INSERT_AT_END" } });
+        await waitFor(() => queueState().items.length !== before, 6000, 100);
+        return queueOf(queueState());
+      },
+
+      // Takes the queue's entry `id` out of it.
+      async queueRemove(id) {
+        const entry = queueEntry(id);
+        const r = queueRendererOf(entry);
+        await runCommand({ removeFromQueueEndpoint: { videoId: r.videoId, itemId: String(id) } });
+        await waitFor(() => !queueState().items.includes(entry), 3000, 50);
+        return queueOf(queueState());
+      },
+
+      // Plays the queue's entry `id` (the songs before it stay in the queue).
+      async queueJump(id) {
+        refuseDuringAd("queueJump");
+        const entry = queueEntry(id);
+        queueApi().selectQueueItem(entry);
+        const videoId = queueRendererOf(entry).videoId;
+        await waitFor(() => videoIdNow() === videoId || adNow(), 6000, 100);
+        return queueOf(queueState());
+      },
+
+      // Plays the radio of a song, album, playlist or artist: a mix that
+      // starts from it and goes on with music like it.
+      async startRadio(uri) {
+        refuseDuringAd("startRadio");
+        const { kind, id } = parseUri(uri);
+        let target;
+        if (kind === "track") target = { videoId: id, playlistId: "RDAMVM" + id, params: "wAEB" };
+        else if (kind === "artist") {
+          if (!shared.artists[id] || !shared.artists[id].radio) await api.artist(uri);
+          const radio = shared.artists[id] && shared.artists[id].radio;
+          if (!radio) throw fail("E_NOT_FOUND", "no radio for " + uri);
+          target = { playlistId: radio.playlistId, params: radio.params };
+        } else {
+          const { playlistId } = await playTarget(uri);
+          if (!playlistId) throw fail("E_BAD_ARGS", "no radio for " + uri);
+          target = { playlistId: "RDAMPL" + playlistId, params: "wAEB" };
+        }
+        shared.asked = null;
+        return watch(target);
+      },
+
+      // Dislikes the song playing (YouTube Music then skips it, and plays
+      // less like it), or takes the dislike back.
+      setDisliked: async (on) => {
+        refuseDuringAd("setDisliked");
+        const target = !!on;
+        if (readDisliked() === target) return target;
+        const scope = inBar(SEL.like) || doc;
+        const button = SEL.dislikeButton.map((selector) => q(selector, scope)).find(Boolean);
+        if (button) {
+          button.click();
+          if (await waitFor(() => readDisliked() === target, 2500, 50)) return target;
+        }
+        const videoId = videoIdNow();
+        if (!videoId) throw fail("E_NOTHING_LOADED", "nothing to dislike");
+        await innertube(target ? "like/dislike" : "like/removelike", { target: { videoId } });
+        return target;
+      },
+
+      // Likes or dislikes any song (`rating`: like, dislike, none).
+      async rate(trackUri, rating) {
+        needSignIn("Rating");
+        const track = parseUri(trackUri);
+        if (track.kind !== "track") throw fail("E_BAD_ARGS", "not a track: " + trackUri);
+        const endpoint = { like: "like/like", dislike: "like/dislike", none: "like/removelike" }[rating];
+        if (!endpoint) throw fail("E_BAD_ARGS", "rating " + rating);
+        await innertube(endpoint, { target: { videoId: track.id } });
+        return rating;
+      },
+
+      // Saves an album or a playlist to the library, or takes it out.
+      async setSaved(uri, on) {
+        needSignIn("The library");
+        const { kind } = parseUri(uri);
+        if (kind !== "album" && kind !== "playlist") throw fail("E_BAD_ARGS", "cannot save " + uri);
+        const { playlistId } = await playTarget(uri);
+        await innertube(on ? "like/like" : "like/removelike", { target: { playlistId } });
+        return !!on;
+      },
+
+      // Subscribes to an artist, or unsubscribes.
+      async setSubscribed(uri, on) {
+        needSignIn("Subscriptions");
+        const { kind, id } = parseUri(uri);
+        if (kind !== "artist") throw fail("E_BAD_ARGS", "not an artist: " + uri);
+        await innertube(on ? "subscription/subscribe" : "subscription/unsubscribe", { channelIds: [id] });
+        return !!on;
+      },
+
+      // Adds a song to one of the account's playlists (not twice).
+      async addToPlaylist(playlistUri, trackUri) {
+        needSignIn("Playlists");
+        const list = parseUri(playlistUri);
+        const track = parseUri(trackUri);
+        if (list.kind !== "playlist" || track.kind !== "track") throw fail("E_BAD_ARGS", "add " + trackUri + " to " + playlistUri);
+        const answer = await innertube("browse/edit_playlist", {
+          playlistId: list.id,
+          actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId: track.id, dedupeOption: "DEDUPE_OPTION_SKIP" }],
+        });
+        if (answer && answer.status && answer.status !== "STATUS_SUCCEEDED") throw fail("E_HTTP", "edit_playlist: " + answer.status);
+        return true;
+      },
+
+      // Makes a private playlist named `name`, with the song `trackUri` in it
+      // when given; answers its URI.
+      async createPlaylist(name, trackUri) {
+        needSignIn("Playlists");
+        const title = String(name || "").trim();
+        if (!title) throw fail("E_BAD_ARGS", "a playlist needs a name");
+        const body = { title, privacyStatus: "PRIVATE" };
+        if (trackUri) {
+          const track = parseUri(trackUri);
+          if (track.kind !== "track") throw fail("E_BAD_ARGS", "not a track: " + trackUri);
+          body.videoIds = [track.id];
+        }
+        const answer = await innertube("playlist/create", body);
+        if (!answer || !answer.playlistId) throw fail("E_SHAPE", "playlist/create: no playlistId");
+        return "ytm:playlist:" + answer.playlistId;
+      },
+
+      // Takes the row `setVideoId` (the song `trackUri`) out of one of the
+      // account's playlists.
+      async removeFromPlaylist(playlistUri, trackUri, setVideoId) {
+        needSignIn("Playlists");
+        const list = parseUri(playlistUri);
+        const track = parseUri(trackUri);
+        if (list.kind !== "playlist" || track.kind !== "track" || !/^[A-Za-z0-9_-]+$/.test(String(setVideoId || ""))) {
+          throw fail("E_BAD_ARGS", "remove " + trackUri + " from " + playlistUri);
+        }
+        const answer = await innertube("browse/edit_playlist", {
+          playlistId: list.id,
+          actions: [{ setVideoId: String(setVideoId), action: "ACTION_REMOVE_VIDEO", removedVideoId: track.id }],
+        });
+        if (answer && answer.status && answer.status !== "STATUS_SUCCEEDED") throw fail("E_HTTP", "edit_playlist: " + answer.status);
+        return true;
       },
 
       // Plays one song; its radio follows it.
@@ -1234,6 +1656,19 @@
     lyricsBrowseIdOf,
     lyricsOf,
     paletteOf,
+    pageUri,
+    pageOfUri,
+    colorOf,
+    sectionsOf,
+    chipsOf,
+    pageOf,
+    queueOf,
+    queueItemOf,
+    searchPageOf,
+    suggestionsOf,
+    historyOf,
+    playlistChoicesOf,
+    SEARCH_FILTERS,
     stateKey,
     shouldPost,
     repeatOf,

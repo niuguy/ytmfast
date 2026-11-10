@@ -54,6 +54,8 @@ export interface PlayerState {
   volume: number;
   muted: boolean;
   liked: boolean;
+  /** The song is disliked (thumbs down). */
+  disliked: boolean;
   canNext: boolean;
   canPrevious: boolean;
   /** An ad is playing: `title` and `artwork` are the ad's. */
@@ -80,6 +82,7 @@ export const EMPTY_PLAYER: PlayerState = {
   volume: 1,
   muted: false,
   liked: false,
+  disliked: false,
   canNext: false,
   canPrevious: false,
   ad: false,
@@ -88,16 +91,21 @@ export const EMPTY_PLAYER: PlayerState = {
 
 // ---- Data ----------------------------------------------------------------
 
-/** What an item is. */
-export type ItemKind = "playlist" | "album" | "artist" | "show" | "collection" | "track";
+/** What an item is: a page of its own (playlist, album, artist, Liked
+ * Music, a browse page such as a mood, History), or something that plays
+ * (a track, a mix). */
+export type ItemKind = "playlist" | "album" | "artist" | "collection" | "page" | "history" | "track" | "mix";
 
-/** A playlist, album, artist, show, Liked Songs or a track shown as a card. */
+/** A playlist, album, artist, Liked Music, a browse page, a mix or a track
+ * shown as a card (or, for a page, a button). */
 export interface Item {
   uri: string;
   kind: ItemKind | string;
   name: string;
   subtitle: string;
   image: string;
+  /** A page's colour (`#rrggbb`: a mood or genre's stripe), if any. */
+  color?: string;
 }
 
 /** A track in a list. */
@@ -122,6 +130,12 @@ export interface CollectionHeader {
   subtitle: string;
   image: string;
   description: string;
+  /** Saved in the library; null (or absent) when it cannot be saved. */
+  saved?: boolean | null;
+  /** A playlist of the account's own: its songs can be taken out. */
+  editable?: boolean;
+  /** The account subscribes to the artist; null (or absent) for the rest. */
+  subscribed?: boolean | null;
 }
 
 /** A playlist, album, artist or Liked Songs: header, tracks and (an
@@ -133,16 +147,78 @@ export interface Collection {
   total: number;
 }
 
-/** A titled row of cards. */
+/** A titled row: covers (`cards`), or pages to open (`buttons`, drawn as
+ * chips; the title may be empty). */
 export interface Section {
   title: string;
+  kind?: "cards" | "buttons" | string;
   items: Item[];
+}
+
+/** One of Home's filters ("Relax", "Workout"). */
+export interface Chip {
+  title: string;
+  /** What Home is asked with to show it. */
+  params: string;
+  selected: boolean;
 }
 
 export interface Home {
   greeting: string;
   sections: Section[];
+  /** Its filters; none where there are none. */
+  chips?: Chip[];
 }
+
+/** A browse page: Explore, charts, new releases, moods and genres, a mood. */
+export interface Page {
+  title: string;
+  sections: Section[];
+}
+
+/** What a search can be narrowed to. */
+export type SearchFilter = "songs" | "videos" | "albums" | "artists" | "playlists";
+
+/** One page of a narrowed search: tracks (songs, videos) or items (the
+ * rest), and where the next page starts ("" at the end). */
+export interface SearchPage {
+  tracks: Track[];
+  items: Item[];
+  continuation: string;
+}
+
+/** One entry of the play queue. */
+export interface QueueItem {
+  /** The entry's id (it removes the entry, or plays it). */
+  id: string;
+  /** The song. */
+  uri: string;
+  name: string;
+  artists: string;
+  image: string;
+  durationMs: number;
+  /** It is the one playing. */
+  current: boolean;
+}
+
+/** The play queue. */
+export interface Queue {
+  items: QueueItem[];
+  /** The index of the one playing, or -1. */
+  current: number;
+  /** What autoplay plays after the queue. */
+  autoplay: QueueItem[];
+}
+
+/** A playlist of the account's that a song can be added to. */
+export interface PlaylistChoice {
+  uri: string;
+  name: string;
+  subtitle: string;
+}
+
+/** A song's rating. */
+export type Rating = "like" | "dislike" | "none";
 
 export interface SearchResults {
   tracks: Track[];
@@ -229,6 +305,21 @@ export interface Backend {
   coverColors(imageUrl: string): Promise<string[]>;
   /** A track's lyrics by URI (no lines when it has none). */
   lyrics(trackUri: string): Promise<Lyrics>;
+  /** Home filtered by one of its chips (`params`; none or "" is Home). */
+  homeWith(params: string): Promise<Home>;
+  /** A browse page (`ytm:page:…`). */
+  browse(uri: string): Promise<Page>;
+  /** One page of a search narrowed to `filter`, or the page after
+   * `continuation`. */
+  searchFiltered(query: string, filter: SearchFilter, continuation: string | null): Promise<SearchPage>;
+  /** What to suggest for a query being typed. */
+  searchSuggestions(query: string): Promise<string[]>;
+  /** What the account played, newest first (signed in). */
+  history(): Promise<Collection>;
+  /** The account's playlists `trackUri` can be added to (signed in). */
+  playlistChoices(trackUri: string): Promise<PlaylistChoice[]>;
+  /** The play queue. */
+  queue(): Promise<Queue>;
 
   // Controls: each sets a target state.
   toggle(): Promise<void>;
@@ -246,6 +337,30 @@ export interface Backend {
   playContext(uri: string, trackUri: string | null): Promise<void>;
   /** Plays one track (its radio follows). */
   playTrack(uri: string): Promise<void>;
+  /** Puts a song, album, playlist or mix in the queue: after the one
+   * playing (`next`), or at its end. Answers the queue. */
+  queueAdd(uri: string, next: boolean): Promise<Queue>;
+  /** Takes the queue's entry `id` out of it. Answers the queue. */
+  queueRemove(id: string): Promise<Queue>;
+  /** Plays the queue's entry `id`. Answers the queue. */
+  queueJump(id: string): Promise<Queue>;
+  /** Plays the radio of a song, album, playlist or artist. */
+  startRadio(uri: string): Promise<void>;
+  /** Dislikes the song playing, or takes the dislike back. */
+  setDisliked(on: boolean): Promise<void>;
+  /** Rates any song. */
+  rate(trackUri: string, rating: Rating): Promise<void>;
+  /** Saves an album or playlist to the library, or takes it out. */
+  setSaved(uri: string, on: boolean): Promise<void>;
+  /** Subscribes to an artist, or unsubscribes. */
+  setSubscribed(artistUri: string, on: boolean): Promise<void>;
+  /** Adds a song to one of the account's playlists. */
+  addToPlaylist(playlistUri: string, trackUri: string): Promise<void>;
+  /** Makes a private playlist, with `trackUri` in it when given; answers
+   * its URI. */
+  createPlaylist(name: string, trackUri: string | null): Promise<string>;
+  /** Takes a song's row (its `uid`) out of one of the account's playlists. */
+  removeFromPlaylist(playlistUri: string, trackUri: string, uid: string): Promise<void>;
 
   // The account and the session.
   signIn(): Promise<void>;
@@ -283,7 +398,7 @@ export function kindOf(uri: string): string {
 
 /** Whether an item has a page (a track has none: it plays). */
 export function opens(item: Item): boolean {
-  return item.kind === "playlist" || item.kind === "album" || item.kind === "artist" || item.kind === "collection";
+  return ["playlist", "album", "artist", "collection", "page", "history"].includes(item.kind);
 }
 
 /** Where `p` is at the time `t`: moved on from when it was sampled while it

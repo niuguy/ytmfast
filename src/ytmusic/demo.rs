@@ -19,6 +19,7 @@ const SEARCH: &str = include_str!("fixtures/search.json");
 const PLAYLIST: &str = include_str!("fixtures/playlist.json");
 const ALBUM: &str = include_str!("fixtures/album.json");
 const ARTIST: &str = include_str!("fixtures/artist.json");
+const EXPLORE: &str = include_str!("fixtures/explore.json");
 
 fn parse(text: &str) -> Value {
     serde_json::from_str(text).expect("a fixture is JSON")
@@ -81,16 +82,88 @@ pub fn answer(command: &Command) -> Answer {
         Command::Playlist(_) => Ok(parse(PLAYLIST)),
         Command::Album(_) => Ok(parse(ALBUM)),
         Command::Artist(_) => Ok(parse(ARTIST)),
+        Command::HomeChip(params) => {
+            let mut home = parse(HOME);
+            for chip in home["chips"].as_array_mut().into_iter().flatten() {
+                chip["selected"] = json!(chip["params"].as_str() == Some(params.as_str()));
+            }
+            Ok(home)
+        }
+        Command::Browse(uri) => {
+            let mut page = parse(EXPLORE);
+            if uri != "ytm:page:FEmusic_explore" {
+                // Any other page: Explore's rows under the name of the button
+                // that opened it.
+                let name = page["sections"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|s| s["items"].as_array().cloned().unwrap_or_default())
+                    .find(|i| i["uri"].as_str() == Some(uri.as_str()))
+                    .and_then(|i| i["name"].as_str().map(str::to_owned))
+                    .unwrap_or_else(|| "Explore".into());
+                page["title"] = json!(name);
+            }
+            Ok(page)
+        }
+        Command::SearchFiltered { query, filter, .. } => {
+            let found = parse(SEARCH);
+            let none = query.trim().is_empty() || query.trim().eq_ignore_ascii_case("nothing at all");
+            let (tracks, items) = match filter.as_str() {
+                _ if none => (json!([]), json!([])),
+                "songs" | "videos" => (found["tracks"].clone(), json!([])),
+                "albums" => (json!([]), found["albums"].clone()),
+                "artists" => (json!([]), found["artists"].clone()),
+                _ => (json!([]), found["playlists"].clone()),
+            };
+            Ok(json!({ "tracks": tracks, "items": items, "continuation": "" }))
+        }
+        Command::SearchSuggestions(query) => {
+            let q = query.trim();
+            Ok(if q.is_empty() { json!([]) } else { json!([q, format!("{q} live"), format!("{q} acoustic")]) })
+        }
+        Command::History => {
+            let mut album = parse(ALBUM);
+            album["header"] = json!({
+                "uri": "ytm:history:all", "kind": "history", "name": "History",
+                "subtitle": "", "image": "", "description": "", "saved": null, "editable": false, "subscribed": null
+            });
+            Ok(album)
+        }
+        Command::PlaylistChoices(_) => Ok(json!([
+            { "uri": "ytm:playlist:demo-road", "name": "Road trip", "subtitle": "12 tracks" },
+            { "uri": "ytm:playlist:demo-focus", "name": "Focus", "subtitle": "30 tracks" },
+        ])),
+        Command::Queue | Command::QueueAdd { .. } | Command::QueueRemove(_) | Command::QueueJump(_) => Ok(demo_queue()),
+        Command::CreatePlaylist { .. } => Ok(json!("ytm:playlist:demo-new")),
         Command::LikedSongs => {
             let mut album = parse(ALBUM);
             album["header"] = json!({
                 "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Music",
-                "subtitle": "12 songs", "image": "", "description": ""
+                "subtitle": "12 songs", "image": "", "description": "", "saved": null, "editable": false, "subscribed": null
             });
             Ok(album)
         }
         _ => Ok(Value::Null),
     }
+}
+
+/// The demo's queue: the recorded album, its first song playing.
+fn demo_queue() -> Value {
+    let album = parse(ALBUM);
+    let items: Vec<Value> = album["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, t)| {
+            json!({
+                "id": i.to_string(), "uri": t["uri"], "name": t["name"], "artists": t["artists"],
+                "image": t["image"], "durationMs": t["durationMs"], "current": i == 0
+            })
+        })
+        .collect();
+    json!({ "items": items, "current": 0, "autoplay": [] })
 }
 
 /// What a control does to the demo's player; true when it changed it.
@@ -105,6 +178,7 @@ pub fn control(player: &mut Player, command: &Command) -> bool {
         Command::SetShuffle(on) => player.shuffle = *on,
         Command::SetRepeat(mode) => player.repeat = *mode,
         Command::SetLiked(on) => player.liked = *on,
+        Command::SetDisliked(on) => player.disliked = *on,
         Command::SetMuted(on) => player.muted = *on,
         Command::PlayContext { .. } | Command::PlayTrack(_) => player.playing = true,
         _ => {}
@@ -157,7 +231,7 @@ mod tests {
     use super::*;
     use crate::ytmusic::{
         bridge::decode,
-        model::{Collection, Home, Library, Me, SearchResults},
+        model::{Collection, Home, Library, Me, Page, PlaylistChoice, Queue, SearchPage, SearchResults},
     };
 
     #[test]
@@ -183,6 +257,34 @@ mod tests {
             let page: Collection = decode(&c, answer(&c).unwrap()).unwrap();
             assert!(!page.tracks.is_empty(), "{c:?}");
         }
+        assert!(!home.chips.is_empty());
+        let chip = home.chips[1].params.clone();
+        let filtered: Home = decode(&Command::Home, answer(&Command::HomeChip(chip)).unwrap()).unwrap();
+        assert!(filtered.chips[1].selected && !filtered.chips[0].selected);
+        let explore: Page = decode(&Command::Home, answer(&Command::Browse("ytm:page:FEmusic_explore".into())).unwrap()).unwrap();
+        assert_eq!(explore.title, "Explore");
+        assert!(explore.sections.iter().any(|s| s.kind == "buttons"));
+        let mood = explore.sections.iter().find(|s| s.kind == "buttons" && !s.title.is_empty()).unwrap().items[0].clone();
+        let page: Page = decode(&Command::Home, answer(&Command::Browse(mood.uri.clone())).unwrap()).unwrap();
+        assert_eq!(page.title, mood.name);
+        let songs: SearchPage = decode(
+            &Command::Home,
+            answer(&Command::SearchFiltered { query: "radiohead".into(), filter: "songs".into(), continuation: None }).unwrap(),
+        )
+        .unwrap();
+        assert!(!songs.tracks.is_empty() && songs.items.is_empty());
+        let history: Collection = decode(&Command::History, answer(&Command::History).unwrap()).unwrap();
+        assert_eq!(history.header.kind, "history");
+        let choices: Vec<PlaylistChoice> =
+            decode(&Command::Home, answer(&Command::PlaylistChoices("ytm:track:x".into())).unwrap()).unwrap();
+        assert_eq!(choices.len(), 2);
+        let queue: Queue = decode(&Command::Queue, answer(&Command::Queue).unwrap()).unwrap();
+        assert_eq!(queue.current, 0.0);
+        assert!(queue.items[0].current);
+        let made: String = decode(&Command::Home, answer(&Command::CreatePlaylist { name: "x".into(), track: None }).unwrap()).unwrap();
+        assert!(made.starts_with("ytm:playlist:"));
+        let suggested: Vec<String> = decode(&Command::Home, answer(&Command::SearchSuggestions("kites".into())).unwrap()).unwrap();
+        assert_eq!(suggested[0], "kites");
     }
 
     #[test]

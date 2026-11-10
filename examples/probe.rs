@@ -5,6 +5,8 @@
 //! ```sh
 //! cargo run --example probe                      # home, search, a playlist, album and artist
 //! cargo run --example probe -- search "kites"    # one call: name, then its arguments
+//! cargo run --example probe -- browse ytm:page:FEmusic_explore
+//! cargo run --example probe -- searchin songs "kites"
 //! cargo run --example probe -- play ytm:track:<videoId>
 //! cargo run --example probe -- signin              # open the sign-in window; report when it is done
 //! PROBE_WATCH=40 cargo run --example probe -- context ytm:album:<id> ytm:track:<videoId>
@@ -95,13 +97,24 @@ fn main() {
             "lyrics" => Command::Lyrics(arg),
             "colors" => Command::Colors(arg),
             "play" => Command::PlayTrack(arg),
+            "chip" => Command::HomeChip(arg),
+            "browse" => Command::Browse(arg),
+            "searchin" => Command::SearchFiltered {
+                query: args.get(2).cloned().unwrap_or_default(),
+                filter: arg,
+                continuation: args.get(3).cloned(),
+            },
+            "suggest" => Command::SearchSuggestions(arg),
+            "history" => Command::History,
+            "queue" => Command::Queue,
+            "radio" => Command::StartRadio(arg),
             "context" => Command::PlayContext { uri: arg, track_uri: args.get(2).cloned() },
             other => {
                 eprintln!("unknown call {other}");
                 std::process::exit(2);
             }
         };
-        let playing = matches!(command, Command::PlayTrack(_) | Command::PlayContext { .. });
+        let playing = matches!(command, Command::PlayTrack(_) | Command::PlayContext { .. } | Command::StartRadio(_));
         if let Some(value) = ask(command) {
             println!("{}", serde_json::to_string_pretty(&value).unwrap_or_default());
         }
