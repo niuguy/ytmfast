@@ -42,7 +42,7 @@
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 1;
+  const REVISION = 3;
   const ORIGIN = "https://music.youtube.com";
   const LIKED_ID = "LM";
   const LIKED_URI = "ytm:collection:" + LIKED_ID;
@@ -67,6 +67,9 @@
     // "Video paused. Continue watching?" after a long while with no input.
     youThere: "ytmusic-you-there-renderer",
     youThereButton: "button, tp-yt-paper-button, yt-button-renderer",
+    // Google's cookie consent wall (consent.youtube.com), shown to a new
+    // profile in some regions: the "Reject all" form, whichever the language.
+    consentReject: 'form[action*="consent."] input[name="set_eom"][value="true"]',
   };
 
   const PAGE_TYPE = {
@@ -217,10 +220,12 @@
     const album = rest.find((run) => pageTypeOf(run.navigationEndpoint) === PAGE_TYPE.ALBUM);
     let artistText = artists.map((run) => run.text).join(", ");
     if (!artistText && columns[1]) {
-      // Unlinked artists: the second column's first part that is not a kind
-      // ("Song", "Video") or a count.
-      const parts = text(columns[1]).split(/\s+[•·]\s+/).filter((p) => p && !isClock(p));
-      artistText = parts.length > 1 ? parts[1] : parts[0] || "";
+      // Unlinked artists. A column in parts ("Song • 4:25") starts with the
+      // entry's kind, so the artist is the next part, if any; a column of one
+      // part is the artist.
+      const raw = text(columns[1]).split(/\s+[•·]\s+/);
+      const parts = raw.filter((p) => p && !isClock(p));
+      artistText = (raw.length > 1 ? parts[1] : parts[0]) || "";
     }
     const fixed = fixedColumns(r).map(text).find(isClock);
     const clock = fixed || rest.map((run) => run.text).find(isClock) || "";
@@ -286,6 +291,15 @@
   const continuationOf = (json) =>
     find(json, "nextContinuationData") ? find(json, "nextContinuationData").continuation : dig(find(json, "continuationItemRenderer"), "continuationEndpoint.continuationCommand.token") || "";
 
+  // Whether a search row is music: not a user's profile, a podcast or one of
+  // its episodes.
+  const isMusic = (r) => {
+    const type = pageTypeOf(r.navigationEndpoint);
+    if (type === PAGE_TYPE.USER_CHANNEL || /PODCAST/.test(type)) return false;
+    const first = runsOf(flexColumns(r)[0])[0];
+    return !/NON_MUSIC|PODCAST/.test(pageTypeOf(first && first.navigationEndpoint));
+  };
+
   // A search's answer: the top result first, then each list in the order
   // found. Classified by what each entry opens, not by the shelves' titles
   // (they are in the account's language).
@@ -298,6 +312,7 @@
       else if (item.kind === "playlist" || item.kind === "mix" || item.kind === "collection") out.playlists.push(item);
     };
     const card = find(json, "musicCardShelfRenderer");
+    let cardArtist = "";
     if (card) {
       const top = itemOf({ title: card.title, subtitle: card.subtitle, thumbnail: card.thumbnail, navigationEndpoint: dig(runsOf(card.title)[0], "navigationEndpoint") });
       if (top && top.kind === "track") {
@@ -309,8 +324,15 @@
         t.durationMs = clockMs(subtitle.map((r) => r.text).find(isClock));
         out.tracks.push(t);
       } else add(top);
+      if (top && top.kind === "artist") cardArtist = top.name;
+      // The card's own rows: an artist's songs, which leave the artist out.
+      findAll(card.contents, "musicResponsiveListItemRenderer").forEach((r, i) => {
+        const t = trackOf(r, i, { artists: cardArtist });
+        if (t) out.tracks.push(Object.assign(t, { uid: "" }));
+      });
     }
     findAll(json, "musicResponsiveListItemRenderer").forEach((r, i) => {
+      if (!isMusic(r)) return;
       const t = trackOf(r, i);
       if (t) {
         t.uid = "";
@@ -330,8 +352,13 @@
     find(json, "musicEditablePlaylistDetailHeaderRenderer") ||
     {};
 
+  // How many songs a header says ("365K views • 28 tracks • 2 hours"): the
+  // part that counts songs or tracks.
   const countOf = (value) => {
-    const m = /(\d[\d,. ]*)/.exec(String(value || ""));
+    const part = String(value || "")
+      .split(/\s+[•·]\s+/)
+      .find((p) => /\b(songs?|tracks?|episodes?|videos?)\b/i.test(p));
+    const m = part && /(\d[\d,. ]*)/.exec(part);
     return m ? Number(m[1].replace(/[,. ]/g, "")) || 0 : 0;
   };
 
@@ -350,14 +377,14 @@
     const h = headerOf(json);
     const header = h.header ? headerOf(h.header) : h;
     const name = text(header.title);
-    const owner = text(header.straplineTextOne);
+    const owner = text(header.straplineTextOne) || dig(header, "facepile.avatarStackViewModel.text.content") || "";
     const subtitle = tidy([owner, text(header.subtitle)].filter(Boolean).join(" · "));
     const description = text(find(header.description, "description")) || text(header.description);
     const image = thumbOf(header.thumbnail, 544);
     const shelf = find(json, "musicPlaylistShelfRenderer") || find(json, "musicShelfRenderer") || {};
     const fallback = kind === "album" ? { artists: owner || text(header.subtitle).split(/\s+[•·]\s+/).pop(), album: name, albumUri: uri, image } : {};
     const tracks = (shelf.contents || []).map((c, i) => trackOf(c && c.musicResponsiveListItemRenderer, i, fallback)).filter(Boolean);
-    const total = countOf(text(header.secondSubtitle)) || countOf(text(header.subtitle).split(/\s+[•·]\s+/).find((p) => /\d/.test(p) && !/^\d{4}$/.test(p))) || tracks.length;
+    const total = countOf(text(header.secondSubtitle)) || countOf(text(header.subtitle)) || tracks.length;
     return {
       collection: {
         header: { uri, kind, name: name || (kind === "collection" ? "Liked Music" : ""), subtitle, image, description: description.trim() },
@@ -892,6 +919,23 @@
       };
     };
 
+    // Google's consent wall stands before the player in some regions. The
+    // bridge answers it once with "Reject all", the most private choice: only
+    // the cookies YouTube needs to work are kept. The page then goes on to
+    // YouTube Music, and the bridge installs there again.
+    let consentAnswered = false;
+    const onConsentWall = () => /(^|\.)consent\.(youtube|google)\.com$/.test((win.location && win.location.hostname) || "");
+    const answerConsent = () => {
+      if (consentAnswered) return;
+      const input = q(SEL.consentReject);
+      const form = input && input.closest && input.closest("form");
+      if (!form) return;
+      consentAnswered = true;
+      const button = q("button", form);
+      if (typeof form.submit === "function") form.submit();
+      else if (button) button.click();
+    };
+
     // Answers "Continue watching?": the listener is using the app.
     const stillHere = () => {
       const prompt = q(SEL.youThere);
@@ -906,6 +950,10 @@
     const tick = () => {
       if (!alive) return;
       try {
+        if (onConsentWall()) {
+          answerConsent();
+          return;
+        }
         if (!readyPosted) {
           if (!bar() || !cfg("INNERTUBE_CONTEXT")) return;
           readyPosted = true;

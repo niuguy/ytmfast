@@ -457,6 +457,25 @@ test("when the page does not take the navigation, it loads the watch page", asyn
   assert.equal(win.assigned, "/watch?v=zz");
 });
 
+test("Google's consent wall is answered once, with Reject all", () => {
+  const form = (eom, label) => {
+    const f = h("form", { action: "https://consent.youtube.com/save" }, h("input", { name: "set_eom", value: eom }), h("button", { "aria-label": label }));
+    f.submitted = 0;
+    f.submit = () => f.submitted++;
+    return f;
+  };
+  const accept = form("false", "Accept all");
+  const reject = form("true", "Reject all");
+  const win = fakeWindow(h("body", {}, accept, reject));
+  win.location.hostname = "consent.youtube.com";
+  const bridge = B.createBridge(win, options(win));
+  bridge.tick();
+  bridge.tick();
+  assert.equal(reject.submitted, 1);
+  assert.equal(accept.submitted, 0);
+  assert.equal(win.posted.length, 0);
+});
+
 test("bad calls are refused with their code", async () => {
   const { win } = page();
   const bridge = B.createBridge(win, options(win));
