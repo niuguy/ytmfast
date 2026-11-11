@@ -481,3 +481,22 @@ test("the mini player floats in its own window, plays from there and switches ba
   await app.waitFor("id:mini-player", { state: "gone" });
   expect(app.window("main").state()?.visible).toBe(true);
 });
+
+test("closing the main window while music plays switches to the mini player; paused, it only hides", async () => {
+  const app = await desktop({ premium: true });
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Paper Lanterns]");
+  await app.press("role:button[First Light, The Quiet Fields]");
+  await app.waitFor("id:player >> role:button[Pause]");
+  await app.window("main").pressClose();
+  await app.waitFor("id:mini-player >> text:First Light");
+  expect(app.window("main").state()?.visible).toBe(false);
+  // Back, pause, and close again: no mini player this time.
+  await app.press("id:mini-player >> role:button[Back to the full player]");
+  await app.waitFor("id:mini-player", { state: "gone" });
+  await app.press("id:player >> role:button[Pause]");
+  await app.waitFor("id:player >> role:button[Play]");
+  await app.window("main").pressClose();
+  expect(app.window("main").state()?.visible).toBe(false);
+  expect(app.window("mini-player").state()).toBe(null);
+});

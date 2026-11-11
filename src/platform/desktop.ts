@@ -1,6 +1,7 @@
 // The desktop shell: a tray icon with the player's controls, and a main
 // window that hides instead of quitting when it is closed, so music keeps
-// playing (as music players do). Desktop only: on the
+// playing (as music players do); while music plays, closing it switches to
+// the mini player instead. Desktop only: on the
 // web, phones and terminals `installDesktopShell` does nothing.
 //
 // Wiring (App.tsx, in the root component's body, which runs once):
@@ -47,6 +48,10 @@ export interface DesktopShellOptions {
   /** Switches to the mini player, or back; shown in the tray menu when
    * given. */
   toggleMiniPlayer?(): void;
+  /** Called as the main window is closed (and hidden): switches to the mini
+   * player when it should (while music plays) and returns true, else
+   * returns false and the window just hides. */
+  closeToMiniPlayer?(): boolean;
   /** Closing the main window hides it (true, the default) or quits. */
   hideOnClose?: boolean;
 }
@@ -92,13 +97,16 @@ export function quitApp(): void {
  * `hideOnClose`). */
 let hidesOnClose = false;
 
+/** Hides the main window, or switches to the mini player in its place. */
+let hideMain: (win: WindowRef) => void = (win) => win.hide();
+
 /** Closes the main window as its title bar's close does: hidden while the
  * tray keeps the app (the music plays on), else closed (the app ends). */
 export function closeMainWindow(): void {
   if (!isAvailable) return;
   const win = windows().find((w) => w.id === "main") ?? windows()[0];
   if (!win) return;
-  if (hidesOnClose) win.hide();
+  if (hidesOnClose) hideMain(win);
   else win.close();
 }
 
@@ -133,9 +141,15 @@ export function installDesktopShell(opts: DesktopShellOptions): DesktopShell {
   if (opts.hideOnClose !== false) {
     win.set({ closeOnPress: false });
     hidesOnClose = true;
-    const stop = win.on("closePress", () => win.hide());
+    // While music plays, closing it switches to the mini player (which
+    // hides it); otherwise it just hides.
+    hideMain = (w) => {
+      if (!opts.closeToMiniPlayer?.()) w.hide();
+    };
+    const stop = win.on("closePress", () => hideMain(win));
     cleanup(() => {
       hidesOnClose = false;
+      hideMain = (w) => w.hide();
       stop();
       win.set({ closeOnPress: true });
     });
