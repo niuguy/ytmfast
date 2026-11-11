@@ -16,7 +16,8 @@ export type IconName =
   | "sparkles" | "externalLink" | "info" | "github" | "code" | "check"
   | "sidebarCollapse" | "sidebarExpand" | "power" | "crown" | "activity" | "compass" | "microphone"
   | "dots" | "queue" | "radio" | "playNext" | "plus" | "thumbUp" | "thumbDown" | "thumbDownFilled"
-  | "bookmark" | "bookmarkFilled" | "history" | "trash" | "userPlus" | "userCheck";
+  | "bookmark" | "bookmarkFilled" | "history" | "trash" | "userPlus" | "userCheck"
+  | "pictureInPicture" | "arrowsDiagonal";
 
 // Tabler Icons 3.19.0 (MIT, tabler.io/icons): Outline at a 1.5pt stroke,
 // and Filled for the transport and the liked heart. Each is the inside of a
@@ -75,6 +76,8 @@ const BODY: Record<IconName, string> = {
   trash: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l16 0" /> <path d="M10 11l0 6" /> <path d="M14 11l0 6" /> <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /> <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></g>`,
   userPlus: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" /> <path d="M16 19h6" /> <path d="M19 16v6" /> <path d="M6 21v-2a4 4 0 0 1 4 -4h4" /></g>`,
   userCheck: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" /> <path d="M6 21v-2a4 4 0 0 1 4 -4h4" /> <path d="M15 19l2 2l4 -4" /></g>`,
+  pictureInPicture: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19h-6a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v4" /> <path d="M14 14m0 1a1 1 0 0 1 1 -1h5a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-5a1 1 0 0 1 -1 -1z" /></g>`,
+  arrowsDiagonal: `<g stroke="@" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4l4 0l0 4" /> <path d="M14 10l6 -6" /> <path d="M8 20l-4 0l0 -4" /> <path d="M4 20l6 -6" /></g>`,
 };
 
 /** The speaker alone: the first frame of the volume icons' morph. */
@@ -342,6 +345,8 @@ const MOVES: Partial<Record<IconName, [Pose, number]>> = {
   plus: [turn(90), 300],
   bookmark: [lift, 300],
   userPlus: [lift, 300],
+  pictureInPicture: [lift, 300],
+  arrowsDiagonal: [nudge(1.5, -1.5), 300],
 };
 
 /** Samples a pose into keyframes the native animation plays (linear

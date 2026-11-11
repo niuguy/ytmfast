@@ -62,6 +62,8 @@ Rust engine and one TSX interface, drawn natively, not in a web page.
 - **Your library**: Liked Songs, saved albums and playlists, subscriptions and History; save and subscribe from a
   page, like or dislike any song, make playlists and add songs to them, take songs out of your own.
 - **Now Playing** with lyrics, the system's media keys, and the music light.
+- **A mini player** (desktop): a small window that floats over your other apps, from the player's button, the tray
+  or Cmd/Ctrl+Shift+M.
 
 Every song has a menu (its "…" button, or a right click) and so does every album, playlist and artist.
 

@@ -11,6 +11,7 @@ import { AppDialog, AppSheet } from "../components/ui/overlays";
 import { NSH_URL, openExternal, openPremium, REPO_URL, SPOTISH_URL, TERMS_URL, YTM_URL } from "../state/links";
 import { aboutOpen, finishFirstRun, firstRunOpen, setAboutOpen, setShortcutsOpen, shortcutsOpen } from "../state/overlays";
 import { REGION_KEYS } from "../components/ui/regions";
+import { hasMiniPlayer } from "../components/player/mini-window";
 import { cancelSignIn, health, signedIn, signIn } from "../state/session";
 import { Logo } from "../ui/logo";
 
@@ -39,6 +40,7 @@ const SHORTCUTS: { title: string; rows: { keys: string[]; label: string }[] }[] 
       { keys: ["space"], label: "Play and pause" },
       { keys: ["mod+shift+right"], label: "Next track" },
       { keys: ["mod+shift+left"], label: "Previous track" },
+      ...(hasMiniPlayer ? [{ keys: ["mod+shift+m"], label: "Mini player" }] : []),
     ],
   },
   {

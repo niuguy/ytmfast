@@ -44,6 +44,9 @@ export interface DesktopShellOptions {
   previous(): void;
   /** Opens the Now Playing view; shown in the tray menu when given. */
   showNowPlaying?(): void;
+  /** Switches to the mini player, or back; shown in the tray menu when
+   * given. */
+  toggleMiniPlayer?(): void;
   /** Closing the main window hides it (true, the default) or quits. */
   hideOnClose?: boolean;
 }
@@ -145,6 +148,7 @@ export function installDesktopShell(opts: DesktopShellOptions): DesktopShell {
     const title = trayTitle(opts.title());
     const ink = token("foreground");
     const showNowPlaying = opts.showNowPlaying;
+    const toggleMiniPlayer = opts.toggleMiniPlayer;
     Tray.set({
       icon: trayIcon(ink),
       tooltip: opts.title().trim() ? `YTMFast: ${title}` : "YTMFast",
@@ -165,6 +169,7 @@ export function installDesktopShell(opts: DesktopShellOptions): DesktopShell {
             showNowPlaying();
           },
         },
+        toggleMiniPlayer && { label: "Mini player", onSelect: () => toggleMiniPlayer() },
         { type: "separator" },
         { label: "Exit", onSelect: quitApp },
       ],

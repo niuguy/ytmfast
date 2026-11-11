@@ -451,3 +451,33 @@ test("History lists what was played; the player's menu dislikes the song", async
   await app.press("role:menuitem[Dislike]");
   await app.waitFor("Disliked: you'll hear less like this.");
 });
+
+test("the mini player floats in its own window, plays from there and switches back", async () => {
+  const app = await desktop({ premium: true });
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Paper Lanterns]");
+  await app.press("role:button[First Light, The Quiet Fields]");
+  await app.waitFor("id:player >> role:button[Pause]");
+  // The bar's button switches: the mini player opens, the main window hides.
+  await app.press("id:player >> role:button[Mini player]");
+  await app.waitFor("id:mini-player >> text:First Light");
+  expect(app.window("mini-player").state()?.visible).toBe(true);
+  expect(app.window("main").state()?.visible).toBe(false);
+  // Its controls drive the one player.
+  await app.press("id:mini-player >> role:button[Pause]");
+  await app.waitFor("id:mini-player >> role:button[Play]");
+  await app.press("id:mini-player >> role:button[Next]");
+  await app.waitFor("id:mini-player >> text:First Light", { state: "gone" });
+  // Back: the main window shows again, and the mini player closes.
+  await app.press("id:mini-player >> role:button[Back to the full player]");
+  await app.waitFor("id:mini-player", { state: "gone" });
+  expect(app.window("main").state()?.visible).toBe(true);
+  expect(app.window("mini-player").state()).toBe(null);
+  // The shortcut switches too; closing it some other way brings the main
+  // window back.
+  await app.keyboard.press("mod+shift+m");
+  await app.waitFor("id:mini-player");
+  await app.window("mini-player").pressClose();
+  await app.waitFor("id:mini-player", { state: "gone" });
+  expect(app.window("main").state()?.visible).toBe(true);
+});

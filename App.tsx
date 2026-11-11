@@ -1,6 +1,7 @@
 // The app's entry: picks the shell for the window (desktop, phone or
 // terminal), and mounts what shows over every shell (Now Playing, About,
-// the sign-in prompt, the first-run sheet and the toasts) and the keyboard
+// the sign-in prompt, the first-run sheet, the toasts and the mini player's
+// window) and the keyboard
 // shortcuts, and installs the desktop integration (`src/platform`). Pages
 // and state live under `src/`.
 
@@ -11,6 +12,7 @@ import { Toaster } from "./src/components/ui/feedback";
 import { TitleBar } from "./src/components/ui/title-bar";
 import { AboutDialog, FirstRunSheet, NewPlaylistDialog, ShortcutsDialog, SigningInDialog } from "./src/pages/dialogs";
 import { QueuePanel } from "./src/components/player/queue";
+import { MiniPlayerWindow, toggleMiniPlayer } from "./src/components/player/mini-window";
 import { bindRegionKeys } from "./src/components/ui/regions";
 import { DesktopShell } from "./src/shells/desktop";
 import { PhoneShell } from "./src/shells/phone";
@@ -42,6 +44,7 @@ function installPlatform() {
     next,
     previous,
     showNowPlaying: () => setNowPlayingOpen(true),
+    toggleMiniPlayer,
   });
   installMediaControls({
     // The position where it is now, so the system's own clock runs on from it.
@@ -73,6 +76,7 @@ function Shortcuts() {
   keymap.bind("space", () => toggle(), { when: "notEditing" });
   keymap.bind("mod+shift+right", () => next(), { when: "notEditing" });
   keymap.bind("mod+shift+left", () => previous(), { when: "notEditing" });
+  keymap.bind("mod+shift+m", () => toggleMiniPlayer(), { when: "notEditing" });
   // Ctrl and an arrow move between the window's regions; `?` lists the keys.
   bindRegionKeys();
   keymap.bind("shift+/", () => setShortcutsOpen(true), { when: "notEditing" });
@@ -100,6 +104,7 @@ function App() {
       </If>
       <NowPlayingSheet />
       <QueuePanel />
+      <MiniPlayerWindow />
       <NewPlaylistDialog />
       <AboutDialog />
       <ShortcutsDialog />
