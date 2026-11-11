@@ -12,7 +12,7 @@ import { Toaster } from "./src/components/ui/feedback";
 import { TitleBar } from "./src/components/ui/title-bar";
 import { AboutDialog, FirstRunSheet, NewPlaylistDialog, ShortcutsDialog, SigningInDialog } from "./src/pages/dialogs";
 import { QueuePanel } from "./src/components/player/queue";
-import { MiniPlayerWindow, toggleMiniPlayer } from "./src/components/player/mini-window";
+import { hasMiniPlayer, MiniPlayerWindow, openMiniPlayer, toggleMiniPlayer } from "./src/components/player/mini-window";
 import { bindRegionKeys } from "./src/components/ui/regions";
 import { DesktopShell } from "./src/shells/desktop";
 import { PhoneShell } from "./src/shells/phone";
@@ -45,6 +45,12 @@ function installPlatform() {
     previous,
     showNowPlaying: () => setNowPlayingOpen(true),
     toggleMiniPlayer,
+    // Closing the window while music plays leaves the mini player.
+    closeToMiniPlayer: () => {
+      if (!hasMiniPlayer || !player().playing) return false;
+      openMiniPlayer();
+      return true;
+    },
   });
   installMediaControls({
     // The position where it is now, so the system's own clock runs on from it.
