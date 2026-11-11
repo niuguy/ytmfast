@@ -1,7 +1,7 @@
 {
   "name": "YTMFast",
   "id": "dev.ytmfast",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "build": 1,
   "icon": "icon.png",
   "appearance": "system",
