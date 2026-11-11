@@ -15,12 +15,13 @@ pub struct Version;
 
 /// Raise by one with every release that adds or changes an export
 /// (`YTMusic`, `MediaControls`, `SystemTheme`, `Version`); never lower it.
-pub const API: u32 = 1;
+pub const API: u32 = 2;
 
 #[module]
 impl Version {
     /// The API version of the installed app's Rust exports: 1 has `YTMusic`,
-    /// `MediaControls`, `SystemTheme` and `Version`.
+    /// `MediaControls`, `SystemTheme` and `Version`; 2 adds `YTMusic`'s
+    /// `playlistStart`, `likedSongsStart` and `tracksAfter`.
     pub fn api() -> u32 {
         API
     }

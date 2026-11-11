@@ -25,6 +25,7 @@ import {
   type SearchPage,
   type SearchResults,
   type Track,
+  type TrackPage,
 } from "./types";
 
 /** How the demo starts. */
@@ -39,6 +40,9 @@ export interface DemoOptions {
   readyAfter?: number;
   /** Milliseconds each data call takes (default 0). */
   latency?: number;
+  /** Tracks per page of a playlist asked for a page at a time (default 0:
+   * every track at once). */
+  pageSize?: number;
 }
 
 /** The accounts sign-ins go through in turn, so a second sign-in is
@@ -69,7 +73,7 @@ export class DemoBackend implements Backend {
   #ending: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: DemoOptions = {}) {
-    this.#options = { premium: false, signedIn: true, ad: false, readyAfter: 30, latency: 0, ...options };
+    this.#options = { premium: false, signedIn: true, ad: false, readyAfter: 30, latency: 0, pageSize: 0, ...options };
     this.player = () => this.#player();
     this.health = () => this.#health();
     this.signedIn = () => this.#signedIn();
@@ -135,8 +139,8 @@ export class DemoBackend implements Backend {
     return this.#data(() => fixtures.search(query), false);
   }
 
-  playlist(uri: string): Promise<Collection> {
-    return this.#collection(uri);
+  playlist(uri: string, firstPage = false): Promise<Collection> {
+    return this.#collection(uri, false, firstPage);
   }
 
   album(uri: string): Promise<Collection> {
@@ -147,8 +151,30 @@ export class DemoBackend implements Backend {
     return this.#collection(uri);
   }
 
-  likedSongs(): Promise<Collection> {
-    return this.#collection(fixtures.LIKED_URI, true);
+  likedSongs(firstPage = false): Promise<Collection> {
+    return this.#collection(fixtures.LIKED_URI, true, firstPage);
+  }
+
+  /** The page of `uri`'s tracks from `at`, as `uri@at` continues. */
+  tracksAfter(continuation: string, offset: number): Promise<TrackPage> {
+    return this.#data(() => {
+      const at = continuation.lastIndexOf("@");
+      const found = at > 0 ? fixtures.collection(continuation.slice(0, at)) : undefined;
+      if (!found) throw backendError("E_BAD_ARGS", `no demo continuation ${continuation}`);
+      const from = Number(continuation.slice(at + 1));
+      if (from !== offset) throw backendError("E_BAD_ARGS", `continuation ${continuation} is not at ${offset}`);
+      return this.#page(found, from);
+    }, false);
+  }
+
+  /** `collection`'s tracks from `from`, a page of them. */
+  #page(collection: Collection, from: number): TrackPage {
+    const size = this.#options.pageSize;
+    const end = from + size;
+    return {
+      tracks: collection.tracks.slice(from, end),
+      continuation: end < collection.tracks.length ? `${collection.header.uri}@${end}` : "",
+    };
   }
 
   library(): Promise<Library> {
@@ -168,11 +194,12 @@ export class DemoBackend implements Backend {
     return this.#data(() => ({ ...ACCOUNTS[this.#account] }), true);
   }
 
-  #collection(uri: string, signedInOnly = false): Promise<Collection> {
+  #collection(uri: string, signedInOnly = false, firstPage = false): Promise<Collection> {
     return this.#data(() => {
       const found = fixtures.collection(uri);
       if (!found) throw backendError("E_NOT_FOUND", `no demo collection ${uri}`);
-      return found;
+      if (!firstPage || !this.#options.pageSize) return found;
+      return { ...found, ...this.#page(found, 0) };
     }, signedInOnly);
   }
 

@@ -145,6 +145,16 @@ export interface Collection {
   tracks: Track[];
   releases: Item[];
   total: number;
+  /** Where the rest of a long playlist's tracks start (`tracksAfter`), when
+   * only its first page was asked for; "" (or absent) otherwise. */
+  continuation?: string;
+}
+
+/** The next page of a long playlist's tracks, and where the one after
+ * starts ("" at the end). */
+export interface TrackPage {
+  tracks: Track[];
+  continuation: string;
 }
 
 /** A titled row: covers (`cards`), or pages to open (`buttons`, drawn as
@@ -294,10 +304,17 @@ export interface Backend {
   // Data.
   home(): Promise<Home>;
   search(query: string): Promise<SearchResults>;
-  playlist(uri: string): Promise<Collection>;
+  /** A playlist; with `firstPage`, only as many tracks as come at once,
+   * with the `continuation` the rest follow from (`tracksAfter`). A backend
+   * that cannot page answers with every track and no continuation. */
+  playlist(uri: string, firstPage?: boolean): Promise<Collection>;
   album(uri: string): Promise<Collection>;
   artist(uri: string): Promise<Collection>;
-  likedSongs(): Promise<Collection>;
+  /** Liked Songs (signed in); `firstPage` as for `playlist`. */
+  likedSongs(firstPage?: boolean): Promise<Collection>;
+  /** The tracks of a long playlist after `continuation`, numbered from
+   * `offset` (the number of tracks before them). */
+  tracksAfter(continuation: string, offset: number): Promise<TrackPage>;
   library(): Promise<Library>;
   me(): Promise<Me>;
   /** A cover image's colours (`#rrggbb`), most telling first; empty when

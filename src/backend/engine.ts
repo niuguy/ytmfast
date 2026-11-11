@@ -8,7 +8,7 @@
 // disposed when a hot update makes a new one.
 
 import { type Accessor, signal } from "nsh";
-import { YTMusic, type Health as NativeHealth, type Player as NativePlayer } from "ytmfast/native";
+import { Version, YTMusic, type Health as NativeHealth, type Player as NativePlayer } from "ytmfast/native";
 import {
   type Backend,
   backendError,
@@ -29,9 +29,20 @@ import {
   type SearchFilter,
   type SearchPage,
   type SearchResults,
+  type TrackPage,
 } from "./types";
 
 const SLOT_KEY = "__ytmfastEngine";
+
+/** Whether the installed app's engine loads a long playlist a page at a
+ * time (API 2; a signed package may run on an older app). */
+function pages(): boolean {
+  try {
+    return Version.api() >= 2;
+  } catch {
+    return false;
+  }
+}
 
 /** The engine backend. The one a previous version of the TSX made (a hot
  * update) stops listening first. */
@@ -146,8 +157,12 @@ export class EngineBackend implements Backend {
     return call(() => this.#ytm.search(query));
   }
 
-  playlist(uri: string): Promise<Collection> {
-    return call(() => this.#ytm.playlist(uri));
+  playlist(uri: string, firstPage = false): Promise<Collection> {
+    return call(() => (firstPage && pages() ? this.#ytm.playlistStart(uri) : this.#ytm.playlist(uri)));
+  }
+
+  tracksAfter(continuation: string, offset: number): Promise<TrackPage> {
+    return call(() => this.#ytm.tracksAfter(continuation, offset));
   }
 
   album(uri: string): Promise<Collection> {
@@ -158,8 +173,8 @@ export class EngineBackend implements Backend {
     return call(() => this.#ytm.artist(uri));
   }
 
-  likedSongs(): Promise<Collection> {
-    return call(() => this.#ytm.likedSongs());
+  likedSongs(firstPage = false): Promise<Collection> {
+    return call(() => (firstPage && pages() ? this.#ytm.likedSongsStart() : this.#ytm.likedSongs()));
   }
 
   library(): Promise<Library> {

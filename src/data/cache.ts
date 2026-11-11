@@ -190,15 +190,27 @@ export interface CachedQuery<T> {
   refetch(): void;
 }
 
-/** A cache-first query of `source()` (null: nothing to load). */
+/** A cache-first query of `source()` (null: nothing to load). The fetcher
+ * may hand `partial` what it has loaded so far: it shows while there is
+ * nothing else to (no value loaded or cached), is never cached, and goes
+ * when the load fails (a list cut short would pass for the whole). */
 export function cachedQuery<T>(
   source: () => CacheSource | null,
-  fetcher: (key: string) => Promise<T>,
+  fetcher: (key: string, partial: (v: T) => void) => Promise<T>,
 ): CachedQuery<T> {
   const live = () => (hydrated() ? source() : null);
+  const partial = signal<{ account: string; key: string; v: T } | null>(null);
   const loaded = resource(live, async (s) => {
-    const v = await fetcher(s.key);
+    let v: T;
+    try {
+      v = await fetcher(s.key, (v) => partial.set({ account: s.account, key: s.key, v }));
+    } catch (error) {
+      partial.set(null);
+      throw error;
+    }
+    // Cached before the partial value goes, so something always shows.
     writeCache(s.account, s.key, v);
+    partial.set(null);
     return { account: s.account, key: s.key, v };
   });
   const data = (): T | undefined => {
@@ -206,7 +218,10 @@ export function cachedQuery<T>(
     if (!s) return undefined;
     const fresh = loaded();
     if (fresh && fresh.account === s.account && fresh.key === s.key) return fresh.v;
-    return readCache<T>(s.account, s.key);
+    const cached = readCache<T>(s.account, s.key);
+    if (cached !== undefined) return cached;
+    const part = partial();
+    return part && part.account === s.account && part.key === s.key ? part.v : undefined;
   };
   const busy = () => {
     const state = loaded.state();

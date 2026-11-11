@@ -599,6 +599,10 @@ playing bars rest.
 - Lists of equal items snap (`snapToInterval`, `snapToAlignment="start"`): a
   card row at a card's start, the library at a whole row. A list under a
   header of unknown height (a collection's tracks) does not snap.
+- A long playlist (and Liked Songs) shows its first page as soon as it
+  comes; the rest load behind it, page by page, and the list grows. Only
+  the whole list is cached, and a cached one shows until the new one is
+  whole.
 - Pictures load at the size they show: covers up to 40pt ask Google's image hosts for the
   120px variant (`src/data/images.ts`).
 - Nothing redraws every display frame without need. Shaders take their clock

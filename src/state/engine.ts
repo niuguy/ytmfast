@@ -29,6 +29,7 @@ function demo(p: Record<string, unknown>): Backend {
     if (typeof p.signedIn === "boolean") options.signedIn = p.signedIn;
     if (typeof p.ad === "boolean") options.ad = p.ad;
     if (typeof p.latency === "number") options.latency = p.latency;
+    if (typeof p.pageSize === "number") options.pageSize = p.pageSize;
     // A library as large as a real one, with covers: for performance runs,
     // and on phones, where the demo is all there is (no engine to log in
     // with), so it looks like music rather than placeholders.
