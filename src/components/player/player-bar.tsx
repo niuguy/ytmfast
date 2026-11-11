@@ -12,6 +12,7 @@ import { coverColorsQuery } from "../../data/queries";
 import { setCoverTint } from "../../state/tint";
 import { lightEffect } from "../../state/visual";
 import { LightMenu } from "./light-menu";
+import { MiniPlayerButton } from "./mini-window";
 import { PlayerGlass } from "../ui/toolbar-fx";
 import { Region } from "../ui/regions";
 import { barSize } from "../layout";
@@ -80,6 +81,7 @@ export function PlayerBar() {
                 </View>
                 <TransportControls quiet />
                 <QueueButton />
+                <MiniPlayerButton />
                 <LightMenu placement="top" />
               </>
             }
@@ -126,6 +128,7 @@ export function PlayerBar() {
               very end. */}
           <IconButton name="microphone" label="Lyrics" hint disabled={!hasTrack()} onPress={openLyrics} />
           <QueueButton />
+          <MiniPlayerButton />
           <VolumeControl quiet />
           <LightMenu placement="top" />
         </View>

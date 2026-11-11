@@ -11,6 +11,7 @@ const drawer = signal(false);
 const firstRun = signal(false);
 const lyrics = signal(false);
 const queuePanel = signal(false);
+const miniPlayer = signal(false);
 /** The "new playlist" dialog: open, with the song it starts with (or "" for
  * none); null while closed. */
 const newPlaylist = signal<{ trackUri: string } | null>(null);
@@ -19,6 +20,13 @@ const newPlaylist = signal<{ trackUri: string } | null>(null);
 export const queueOpen = () => queuePanel();
 export function setQueueOpen(open: boolean): void {
   queuePanel.set(open);
+}
+
+/** Whether the mini player's window is open (tracked). Opening and closing
+ * it also hides and shows the main window: see `platform/mini-player`. */
+export const miniPlayerOpen = () => miniPlayer();
+export function setMiniPlayerOpen(open: boolean): void {
+  miniPlayer.set(open);
 }
 
 /** The "new playlist" dialog's song, while it is open (tracked). */
