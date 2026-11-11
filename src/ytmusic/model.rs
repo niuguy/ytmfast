@@ -100,6 +100,9 @@ pub struct Collection {
     pub releases: Vec<Item>,
     /// How many tracks it has in all (more than `tracks` holds when long).
     pub total: f64,
+    /// Where the rest of a long playlist's tracks start (`tracks_after`)
+    /// when only its first page was asked for; empty otherwise.
+    pub continuation: String,
 }
 
 /// A titled row of cards on the home page.
@@ -176,6 +179,16 @@ pub struct SearchPage {
     pub tracks: Vec<Track>,
     /// Albums, artists or playlists found (for those kinds).
     pub items: Vec<Item>,
+    /// Where the next page starts; empty at the end.
+    pub continuation: String,
+}
+
+/// The next page of a long playlist's tracks.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, JsObject)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TrackPage {
+    /// Its tracks.
+    pub tracks: Vec<Track>,
     /// Where the next page starts; empty at the end.
     pub continuation: String,
 }

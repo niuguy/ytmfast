@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use crate::ytmusic::{
     Collection, CoverColor, EngineError, ErrorCode, Health, Home, Library, Lyrics, Me, Page, Player, PlaylistChoice, Queue, Repeat,
-    SearchPage, SearchResults, Session, Snapshot,
+    SearchPage, SearchResults, Session, Snapshot, TrackPage,
     bridge::{self, Command},
     engine,
 };
@@ -176,6 +176,18 @@ impl YTMusic {
         data(this, Command::Playlist(uri)).await
     }
 
+    /// A playlist's first page of tracks, with the `continuation` its other
+    /// tracks follow from (`tracks_after`); empty when there are no more.
+    pub async fn playlist_start(this: Instance<Self>, uri: String) -> Result<Collection, String> {
+        data(this, Command::PlaylistStart(uri)).await
+    }
+
+    /// The tracks of a long playlist after `continuation`, numbered from
+    /// `offset` (the number of tracks before them).
+    pub async fn tracks_after(this: Instance<Self>, continuation: String, offset: f64) -> Result<TrackPage, String> {
+        data(this, Command::TracksAfter { continuation, offset }).await
+    }
+
     /// An album by URI.
     pub async fn album(this: Instance<Self>, uri: String) -> Result<Collection, String> {
         data(this, Command::Album(uri)).await
@@ -189,6 +201,12 @@ impl YTMusic {
     /// The signed-in user's Liked Songs.
     pub async fn liked_songs(this: Instance<Self>) -> Result<Collection, String> {
         data(this, Command::LikedSongs).await
+    }
+
+    /// Liked Songs' first page of tracks, and where the rest start (as
+    /// `playlist_start`).
+    pub async fn liked_songs_start(this: Instance<Self>) -> Result<Collection, String> {
+        data(this, Command::LikedSongsStart).await
     }
 
     /// The signed-in user's library.

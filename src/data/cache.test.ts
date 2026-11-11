@@ -102,3 +102,56 @@ test("an entry is stored as the JSON of { savedAt, v }", async () => {
   expect(raw).toBe(JSON.stringify({ savedAt: parsed.savedAt, v: value }));
   expect(parsed.v).toEqual(value);
 });
+
+test("a partial value shows while nothing else can, and is never cached", async () => {
+  await hydrate();
+  clearMemory();
+  const source = signal<CacheSource | null>({ account: "acct-a", key: "ytm:playlist:long", epoch: 0 });
+  let step: (v: number[]) => void = () => {};
+  let release: (v: number[]) => void = () => {};
+  const query = cachedQuery<number[]>(source, (_key, partial) => {
+    step = partial;
+    return new Promise((resolve) => (release = resolve));
+  });
+  await until(() => query.loading());
+  step([1, 2]);
+  await until(() => query.data()?.length === 2);
+  expect(query.loading()).toBe(false);
+  expect(readCache("acct-a", "ytm:playlist:long")).toBeUndefined();
+  step([1, 2, 3, 4]);
+  await until(() => query.data()?.length === 4);
+  release([1, 2, 3, 4, 5]);
+  await until(() => query.data()?.length === 5);
+  expect(readCache("acct-a", "ytm:playlist:long")).toEqual([1, 2, 3, 4, 5]);
+});
+
+test("a cached value shows over a partial one while it loads again", async () => {
+  await hydrate();
+  clearMemory();
+  writeCache("acct-a", "ytm:playlist:long", [1, 2, 3, 4, 5]);
+  const source = signal<CacheSource | null>({ account: "acct-a", key: "ytm:playlist:long", epoch: 0 });
+  let release: (v: number[]) => void = () => {};
+  const query = cachedQuery<number[]>(source, (_key, partial) => {
+    partial([1]);
+    return new Promise((resolve) => (release = resolve));
+  });
+  await until(() => query.refreshing());
+  expect(query.data()).toEqual([1, 2, 3, 4, 5]);
+  release([1, 2, 3, 4, 5, 6]);
+  await until(() => query.data()?.length === 6);
+});
+
+test("a load that fails takes its partial value away, and reports the error", async () => {
+  await hydrate();
+  clearMemory();
+  const source = signal<CacheSource | null>({ account: "acct-a", key: "ytm:playlist:cut", epoch: 0 });
+  let fail: (e: Error) => void = () => {};
+  const query = cachedQuery<number[]>(source, (_key, partial) => {
+    partial([1, 2]);
+    return new Promise((_, reject) => (fail = reject));
+  });
+  await until(() => query.data()?.length === 2);
+  fail(new Error("E_NETWORK: gone"));
+  await until(() => query.error() !== undefined);
+  expect(query.data()).toBeUndefined();
+});

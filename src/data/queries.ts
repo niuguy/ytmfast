@@ -3,6 +3,7 @@
 
 import { type Accessor, resource, type Resource } from "nsh";
 import { type CachedQuery, cachedQuery } from "./cache";
+import { followPages } from "./pages";
 import { type Collection, type Home, kindOf, type Library, type Lyrics, type Me, type Page } from "../backend/types";
 import { backend } from "../state/engine";
 import { cacheAccount, dataEpoch } from "../state/session";
@@ -29,20 +30,27 @@ export function pageQuery(uri: () => string): CachedQuery<Page> {
   return cachedQuery(scoped(uri), (key) => backend.browse(key));
 }
 
-/** A playlist, album, artist or Liked Songs by URI. */
+/** The most tracks of a playlist, and of Liked Songs, loaded. */
+const PLAYLIST_MOST = 1000;
+const LIKED_MOST = 2000;
+
+const tracksAfter = (continuation: string, offset: number) => backend.tracksAfter(continuation, offset);
+
+/** A playlist, album, artist or Liked Songs by URI. A long playlist shows
+ * its first page while the rest load. */
 export function collectionQuery(uri: () => string): CachedQuery<Collection> {
-  return cachedQuery(scoped(uri), (key) => {
+  return cachedQuery(scoped(uri), async (key, partial) => {
     switch (kindOf(key)) {
       case "album":
         return backend.album(key);
       case "artist":
         return backend.artist(key);
       case "collection":
-        return backend.likedSongs();
+        return followPages(await backend.likedSongs(true), LIKED_MOST, tracksAfter, partial);
       case "history":
         return backend.history();
       default:
-        return backend.playlist(key);
+        return followPages(await backend.playlist(key, true), PLAYLIST_MOST, tracksAfter, partial);
     }
   });
 }

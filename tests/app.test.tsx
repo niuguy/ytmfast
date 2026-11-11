@@ -500,3 +500,14 @@ test("closing the main window while music plays switches to the mini player; pau
   expect(app.window("main").state()?.visible).toBe(false);
   expect(app.window("mini-player").state()).toBe(null);
 });
+
+test("a long playlist loaded a page at a time shows every song, and is cached whole", async () => {
+  // Pages of three songs: Morning Static's ten come in four.
+  const app = await desktop({ pageSize: 3 });
+  await app.waitFor("Good evening, Ada");
+  await app.press("role:button[Morning Static]");
+  const page = "id:page-ytm:playlist:morningstatic";
+  await app.waitFor(`${page} >> role:button[Small Hours, The Quiet Fields]`);
+  expect(app.count(`${page} >> role:button[First Light, The Quiet Fields]`)).toBe(1);
+  expect(app.storage()["cache:v1:demo-ada:ytm:playlist:morningstatic"]).toContain("Small Hours");
+});

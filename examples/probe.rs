@@ -7,6 +7,7 @@
 //! cargo run --example probe -- search "kites"    # one call: name, then its arguments
 //! cargo run --example probe -- browse ytm:page:FEmusic_explore
 //! cargo run --example probe -- searchin songs "kites"
+//! cargo run --example probe -- playlistfirst ytm:playlist:<id>   # its first page; `after <continuation> <offset>` the next
 //! cargo run --example probe -- play ytm:track:<videoId>
 //! cargo run --example probe -- signin              # open the sign-in window; report when it is done
 //! PROBE_WATCH=40 cargo run --example probe -- context ytm:album:<id> ytm:track:<videoId>
@@ -89,9 +90,15 @@ fn main() {
             "home" => Command::Home,
             "search" => Command::Search(arg),
             "playlist" => Command::Playlist(arg),
+            "playlistfirst" => Command::PlaylistStart(arg),
+            "after" => Command::TracksAfter {
+                continuation: arg,
+                offset: args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.0),
+            },
             "album" => Command::Album(arg),
             "artist" => Command::Artist(arg),
             "liked" => Command::LikedSongs,
+            "likedfirst" => Command::LikedSongsStart,
             "library" => Command::Library,
             "me" => Command::Me,
             "lyrics" => Command::Lyrics(arg),

@@ -44,7 +44,7 @@
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 6;
+  const REVISION = 7;
   const ORIGIN = "https://music.youtube.com";
   const LIKED_ID = "LM";
   const LIKED_URI = "ytm:collection:" + LIKED_ID;
@@ -892,6 +892,14 @@
       if (!signedIn()) throw fail("E_SIGNED_OUT", what + " needs a signed-in account");
     };
 
+    // A list's collection with up to `max` tracks, following its
+    // continuations; with `max` 0, its first page and where it continues.
+    const listOf = async (first, max) => {
+      if (!max) return Object.assign(first.collection, { continuation: first.continuation || "" });
+      first.collection.tracks = await allTracks(first, max);
+      return Object.assign(first.collection, { continuation: "" });
+    };
+
     // Up to `max` tracks of a list, following its continuations.
     const allTracks = async (first, max, fallback) => {
       const tracks = first.collection.tracks.slice();
@@ -993,20 +1001,30 @@
         return playlistChoicesOf(await innertube("playlist/get_add_to_playlist", { videoIds: [track.id] }));
       },
 
-      async playlist(uri) {
+      // A playlist: up to 1000 of its tracks, or with `firstPage` only the
+      // first page of them, with the `continuation` the rest follow from
+      // (`tracksAfter`), so a long one shows before it is all loaded.
+      async playlist(uri, firstPage) {
         const { id } = parseUri(uri);
         const first = collectionOf(await browse({ browseId: "VL" + id }), uri, "playlist");
-        first.collection.tracks = await allTracks(first, 1000);
-        return first.collection;
+        return listOf(first, firstPage ? 0 : 1000);
       },
 
-      async likedSongs() {
+      // Liked Music: up to 2000 of its tracks, or the first page (as `playlist`).
+      async likedSongs(firstPage) {
         needSignIn("Liked Music");
         const first = collectionOf(await browse({ browseId: "VL" + LIKED_ID }), LIKED_URI, "collection");
         first.collection.header.name = first.collection.header.name || "Liked Music";
-        first.collection.tracks = await allTracks(first, 2000);
-        first.collection.total = Math.max(first.collection.total, first.collection.tracks.length);
-        return first.collection;
+        const collection = await listOf(first, firstPage ? 0 : 2000);
+        collection.total = Math.max(collection.total, collection.tracks.length);
+        return collection;
+      },
+
+      // The tracks of a long playlist after `continuation`, numbered from
+      // `offset`, and where the next page starts ("" at the end).
+      async tracksAfter(continuation, offset) {
+        if (typeof continuation !== "string" || !continuation) throw fail("E_BAD_ARGS", "tracksAfter needs a continuation");
+        return continuedTracks(await browse({ continuation }), Number(offset) || 0);
       },
 
       async album(uri) {

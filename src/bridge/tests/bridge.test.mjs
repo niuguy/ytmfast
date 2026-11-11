@@ -249,6 +249,46 @@ test("a long playlist says its total and where it continues", () => {
   assert.equal(more.continuation, "");
 });
 
+test("a playlist's first page comes alone, and the rest follow from its continuation", async () => {
+  const { win } = page();
+  const bridge = B.createBridge(win, options(win));
+  const more = { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: "T2" } } } };
+  const pages = {
+    VLPLk: {
+      header: { musicResponsiveHeaderRenderer: { title: runs("Kites"), secondSubtitle: runs("3 songs") } },
+      contents: { musicPlaylistShelfRenderer: { contents: [songRow("p1", "One"), more] } },
+    },
+    T2: { onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: [songRow("p2", "Two"), { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: "T3" } } } }] } }] },
+    T3: { onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: [songRow("p3", "Three")] } }] },
+  };
+  const asked = [];
+  win.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const key = body.browseId || body.continuation;
+    asked.push(key);
+    return { ok: true, status: 200, json: async () => pages[key] };
+  };
+  win.crypto = { subtle: { digest: async () => new Uint8Array(20).buffer } };
+  win.TextEncoder = TextEncoder;
+
+  const first = await bridge.call("playlist", ["ytm:playlist:PLk", true]);
+  assert.deepEqual(first.tracks.map((t) => t.name), ["One"]);
+  assert.equal(first.continuation, "T2");
+  assert.equal(first.total, 3);
+  assert.deepEqual(asked, ["VLPLk"]);
+  const second = await bridge.call("tracksAfter", ["T2", 1]);
+  assert.deepEqual(second.tracks.map((t) => t.uid), ["p2:1"]);
+  assert.equal(second.continuation, "T3");
+  await rejects(bridge.call("tracksAfter", ["", 0]), "E_BAD_ARGS");
+
+  // Without `firstPage`, as before: every page, and no continuation.
+  asked.length = 0;
+  const all = await bridge.call("playlist", ["ytm:playlist:PLk"]);
+  assert.deepEqual(all.tracks.map((t) => t.name), ["One", "Two", "Three"]);
+  assert.equal(all.continuation, "");
+  assert.deepEqual(asked, ["VLPLk", "T2", "T3"]);
+});
+
 test("an artist page: top songs, albums and singles, and what plays", () => {
   const json = {
     header: {

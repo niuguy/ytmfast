@@ -79,7 +79,8 @@ pub fn answer(command: &Command) -> Answer {
             }
             Ok(json!({ "items": items }))
         }
-        Command::Playlist(_) => Ok(parse(PLAYLIST)),
+        Command::Playlist(_) | Command::PlaylistStart(_) => Ok(parse(PLAYLIST)),
+        Command::TracksAfter { .. } => Ok(json!({ "tracks": [], "continuation": "" })),
         Command::Album(_) => Ok(parse(ALBUM)),
         Command::Artist(_) => Ok(parse(ARTIST)),
         Command::HomeChip(params) => {
@@ -136,7 +137,7 @@ pub fn answer(command: &Command) -> Answer {
         ])),
         Command::Queue | Command::QueueAdd { .. } | Command::QueueRemove(_) | Command::QueueJump(_) => Ok(demo_queue()),
         Command::CreatePlaylist { .. } => Ok(json!("ytm:playlist:demo-new")),
-        Command::LikedSongs => {
+        Command::LikedSongs | Command::LikedSongsStart => {
             let mut album = parse(ALBUM);
             album["header"] = json!({
                 "uri": "ytm:collection:LM", "kind": "collection", "name": "Liked Music",
@@ -253,6 +254,8 @@ mod tests {
             Command::Album("a".into()),
             Command::Artist("a".into()),
             Command::LikedSongs,
+            Command::PlaylistStart("p".into()),
+            Command::LikedSongsStart,
         ] {
             let page: Collection = decode(&c, answer(&c).unwrap()).unwrap();
             assert!(!page.tracks.is_empty(), "{c:?}");

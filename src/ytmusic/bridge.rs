@@ -89,9 +89,18 @@ pub enum Command {
     Home,
     Search(String),
     Playlist(String),
+    /// A playlist's first page of tracks, and where the rest start.
+    PlaylistStart(String),
     Album(String),
     Artist(String),
     LikedSongs,
+    /// Liked Songs' first page of tracks, and where the rest start.
+    LikedSongsStart,
+    /// A long playlist's tracks after `continuation`, numbered from `offset`.
+    TracksAfter {
+        continuation: String,
+        offset: f64,
+    },
     Library,
     Me,
     Toggle,
@@ -189,10 +198,11 @@ impl Command {
         match self {
             Command::Home => "home",
             Command::Search(_) => "search",
-            Command::Playlist(_) => "playlist",
+            Command::Playlist(_) | Command::PlaylistStart(_) => "playlist",
             Command::Album(_) => "album",
             Command::Artist(_) => "artist",
-            Command::LikedSongs => "likedSongs",
+            Command::LikedSongs | Command::LikedSongsStart => "likedSongs",
+            Command::TracksAfter { .. } => "tracksAfter",
             Command::Library => "library",
             Command::Me => "me",
             Command::Toggle => "toggle",
@@ -250,6 +260,9 @@ impl Command {
             | Command::StartRadio(s) => {
                 json!([s])
             }
+            Command::PlaylistStart(uri) => json!([uri, true]),
+            Command::LikedSongsStart => json!([true]),
+            Command::TracksAfter { continuation, offset } => json!([continuation, offset.max(0.0).round()]),
             Command::SearchFiltered { query, filter, continuation } => json!([query, filter, continuation]),
             Command::QueueAdd { uri, next } => json!([uri, next]),
             Command::SetDisliked(on) => json!([on]),
@@ -275,9 +288,12 @@ impl Command {
             Command::Home
                 | Command::Search(_)
                 | Command::Playlist(_)
+                | Command::PlaylistStart(_)
                 | Command::Album(_)
                 | Command::Artist(_)
                 | Command::LikedSongs
+                | Command::LikedSongsStart
+                | Command::TracksAfter { .. }
                 | Command::Library
                 | Command::Me
                 | Command::Colors(_)
@@ -436,6 +452,13 @@ mod tests {
             call(Command::PlayContext { uri: "ytm:album:a".into(), track_uri: Some("ytm:track:t".into()) })
                 .contains(r#"["ytm:album:a","ytm:track:t"]"#)
         );
+        assert!(call(Command::Playlist("ytm:playlist:p".into())).contains(r#".call("playlist", ["ytm:playlist:p"])"#));
+        assert!(call(Command::PlaylistStart("ytm:playlist:p".into())).contains(r#".call("playlist", ["ytm:playlist:p",true])"#));
+        assert!(call(Command::LikedSongsStart).contains(r#".call("likedSongs", [true])"#));
+        assert!(
+            call(Command::TracksAfter { continuation: "T2".into(), offset: 100.0 })
+                .contains(r#".call("tracksAfter", ["T2",100.0])"#)
+        );
         // A script can't break out of the string.
         assert!(call(Command::PlayTrack("x\"); alert(1); (\"".into())).contains(r#"["x\"); alert(1); (\""]"#));
     }
@@ -443,6 +466,8 @@ mod tests {
     #[test]
     fn sorts_commands() {
         assert!(Command::Me.is_data() && !Command::Toggle.is_data());
+        assert!(Command::PlaylistStart("p".into()).is_data() && Command::LikedSongsStart.is_data());
+        assert!(Command::TracksAfter { continuation: "t".into(), offset: 0.0 }.is_data());
         assert_eq!(Command::Seek(1.0).coalesce(), Some(Coalesce::Seek));
         assert_eq!(Command::SetVolume(1.0).coalesce(), Some(Coalesce::Volume));
         assert_eq!(Command::SetMuted(true).coalesce(), None);
