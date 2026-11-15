@@ -83,11 +83,12 @@ export function notify(id: MessageId, action?: ToastAction): void {
 }
 
 /** Shows a message that is not in the catalog (the updater's, which words
- * its own); the same text again replaces it. */
-export function announce(text: string, action?: ToastAction): void {
+ * its own); the same text again replaces it. A `sticky` one stays until it
+ * is closed or its action chosen (an update on offer). */
+export function announce(text: string, action?: ToastAction, opts?: { sticky?: boolean }): void {
   const id = `text:${text}`;
   contents.set({ ...contents(), [id]: { text, action } });
-  manager.push(id, id, { timeout: action ? TIMEOUT * 2 : TIMEOUT });
+  manager.push(id, id, { timeout: opts?.sticky ? null : action ? TIMEOUT * 2 : TIMEOUT });
   sync();
   ticking ??= setInterval(tick, TICK);
 }

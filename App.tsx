@@ -20,7 +20,7 @@ import { TerminalShell } from "./src/shells/terminal";
 import { installDesktopShell } from "./src/platform/desktop";
 import { installMediaControls } from "./src/platform/media";
 import { followSystemTheme } from "./src/platform/theme";
-import { checkForUpdates } from "./src/platform/updater";
+import { availableUpdate, checkForUpdates, type UpdateOptions } from "./src/platform/updater";
 import { positionAt } from "./src/backend/types";
 import { isDemo } from "./src/state/engine";
 import { announce } from "./src/state/feedback";
@@ -34,6 +34,7 @@ const UPDATE_EVERY = 6 * 60 * 60 * 1000;
  * keys and Now Playing, Omarchy's theme, and updates. Each piece does
  * nothing where its platform has none; everything goes with the root. */
 function installPlatform() {
+  const updates: UpdateOptions = { notify: (message, action, opts) => announce(message, action, opts) };
   const shell = installDesktopShell({
     isPlaying: () => player().playing,
     title: () => {
@@ -51,6 +52,15 @@ function installPlatform() {
       openMiniPlayer();
       return true;
     },
+    // The demo (tests, the web, phones) is no release to update.
+    updateItem: isDemo
+      ? undefined
+      : () => {
+          const update = availableUpdate();
+          return update
+            ? { label: `Update to YTMFast ${update.version}`, onSelect: update.take }
+            : { label: "Check for Updates…", onSelect: () => void checkForUpdates(updates, true) };
+        },
   });
   installMediaControls({
     // The position where it is now, so the system's own clock runs on from it.
@@ -69,7 +79,7 @@ function installPlatform() {
   followSystemTheme();
   // The demo (tests, the web, phones) is no release to update.
   if (!isDemo) {
-    const check = () => void checkForUpdates({ notify: (message, action) => announce(message, action) });
+    const check = () => void checkForUpdates(updates);
     check();
     const timer = setInterval(check, UPDATE_EVERY);
     cleanup(() => clearInterval(timer));
