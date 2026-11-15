@@ -44,7 +44,7 @@
   "use strict";
 
   const PROTOCOL = 1;
-  const REVISION = 7;
+  const REVISION = 8;
   const ORIGIN = "https://music.youtube.com";
   const LIKED_ID = "LM";
   const LIKED_URI = "ytm:collection:" + LIKED_ID;
@@ -84,6 +84,7 @@
     ARTIST: "MUSIC_PAGE_TYPE_ARTIST",
     USER_CHANNEL: "MUSIC_PAGE_TYPE_USER_CHANNEL",
     LIBRARY_ARTIST: "MUSIC_PAGE_TYPE_LIBRARY_ARTIST",
+    PODCAST_SHOW: "MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE",
   };
 
   // --- Errors ----------------------------------------------------------------
@@ -188,6 +189,8 @@
     if (!id) return null;
     const type = pageTypeOf(endpoint);
     if (type === PAGE_TYPE.ALBUM) return { uri: "ytm:album:" + id, kind: "album" };
+    // A podcast show (`MPSP<playlistId>`): its episodes are a playlist's.
+    if (type === PAGE_TYPE.PODCAST_SHOW || /^MPSP/.test(id)) return { uri: "ytm:playlist:" + id.replace(/^MPSP/, ""), kind: "playlist" };
     if (type === PAGE_TYPE.PLAYLIST || /^VL/.test(id)) {
       const playlistId = id.replace(/^VL/, "");
       return playlistId === LIKED_ID ? { uri: LIKED_URI, kind: "collection" } : { uri: "ytm:playlist:" + playlistId, kind: "playlist" };
@@ -292,9 +295,12 @@
       return { uri: target.uri, kind: target.kind, name, subtitle: tidy(columns.slice(1).map(text).filter(Boolean).join(" · ")), image: thumbOf(r.thumbnail, 226) };
     }
     const name = text(r.title);
-    const target = targetOf(r.navigationEndpoint) || targetOf(dig(runsOf(r.title)[0], "navigationEndpoint"));
+    // A podcast episode (`musicMultiRowListItemRenderer`) plays from `onTap`;
+    // its show is `secondTitle`.
+    const target = targetOf(r.navigationEndpoint) || targetOf(r.onTap) || targetOf(dig(runsOf(r.title)[0], "navigationEndpoint"));
     if (!target || !name) return null;
-    return { uri: target.uri, kind: target.kind, name, subtitle: tidy(text(r.subtitle)), image: thumbOf(r.thumbnailRenderer || r.thumbnail, 226) };
+    const subtitle = [text(r.secondTitle), text(r.subtitle)].filter(Boolean).join(" · ");
+    return { uri: target.uri, kind: target.kind, name, subtitle: tidy(subtitle), image: thumbOf(r.thumbnailRenderer || r.thumbnail, 226) };
   };
 
   // Every item (card or row) of a shelf's `contents`.
@@ -1007,6 +1013,15 @@
       async playlist(uri, firstPage) {
         const { id } = parseUri(uri);
         const first = collectionOf(await browse({ browseId: "VL" + id }), uri, "playlist");
+        // A podcast's playlist page has no header: its show's page has.
+        if (!first.collection.header.name) {
+          try {
+            const show = collectionOf(await browse({ browseId: "MPSP" + id }), uri, "playlist").collection.header;
+            if (show.name) Object.assign(first.collection.header, { name: show.name, subtitle: show.subtitle, image: show.image, description: show.description, saved: show.saved });
+          } catch (_) {
+            // Not a show: the page stays as it is.
+          }
+        }
         return listOf(first, firstPage ? 0 : 1000);
       },
 
