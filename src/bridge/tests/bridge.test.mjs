@@ -59,6 +59,8 @@ test("an endpoint names what it opens or plays", () => {
   assert.deepEqual(B.targetOf({ watchEndpoint: { videoId: "v1" } }), { uri: "ytm:track:v1", kind: "track" });
   assert.deepEqual(B.targetOf({ watchPlaylistEndpoint: { playlistId: "RDCLAKx" } }), { uri: "ytm:mix:RDCLAKx", kind: "mix" });
   assert.equal(B.targetOf({ urlEndpoint: { url: "https://x" } }), null);
+  // A podcast show opens as the playlist of its episodes.
+  assert.deepEqual(B.targetOf(browseTo("MPSPPLshow", "PODCAST_SHOW_DETAIL_PAGE")), { uri: "ytm:playlist:PLshow", kind: "playlist" });
 });
 
 test("a playlist row is a track, with its artists, album and length", () => {
@@ -287,6 +289,52 @@ test("a playlist's first page comes alone, and the rest follow from its continua
   assert.deepEqual(all.tracks.map((t) => t.name), ["One", "Two", "Three"]);
   assert.equal(all.continuation, "");
   assert.deepEqual(asked, ["VLPLk", "T2", "T3"]);
+});
+
+test("Home's podcasts: episodes play, and shows open their episodes, named from the show's page", async () => {
+  const shows = carousel("Popular shows", [card("History Hour", ["History Co"], browseTo("MPSPPLshow", "PODCAST_SHOW_DETAIL_PAGE"))]);
+  const home = B.homeOf({ contents: { sectionListRenderer: { contents: [shows] } } }, 9);
+  assert.deepEqual(home.sections.map((s) => [s.title, s.items.map((i) => i.uri)]), [["Popular shows", ["ytm:playlist:PLshow"]]]);
+
+  // An episode card plays the episode, and names its show.
+  const episode = {
+    musicMultiRowListItemRenderer: {
+      title: runs({ text: "The Fall of Rome", navigationEndpoint: browseTo("MPEDep1", "NON_MUSIC_AUDIO_TRACK_PAGE") }),
+      secondTitle: runs({ text: "History Hour", navigationEndpoint: browseTo("MPSPPLshow", "PODCAST_SHOW_DETAIL_PAGE") }),
+      subtitle: runs("12k views", " • ", "3 days ago"),
+      thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://i.ytimg.com/vi/ep1/hq720.jpg", 400) } },
+      onTap: { watchEndpoint: { videoId: "ep1" } },
+    },
+  };
+  const episodes = B.homeOf({ contents: { sectionListRenderer: { contents: [carousel("True crime", [episode])] } } }, 9).sections[0];
+  assert.equal(episodes.title, "True crime");
+  assert.equal(episodes.items[0].uri, "ytm:track:ep1");
+  assert.equal(episodes.items[0].kind, "track");
+  assert.equal(episodes.items[0].name, "The Fall of Rome");
+  assert.match(episodes.items[0].subtitle, /^History Hour · 12k views/);
+
+  const { win } = page();
+  const bridge = B.createBridge(win, options(win));
+  const pages = {
+    // A podcast's playlist page: episodes, no header.
+    VLPLshow: { contents: { musicPlaylistShelfRenderer: { contents: [songRow("e1", "Episode one", { album: null })] } } },
+    MPSPPLshow: { header: { musicResponsiveHeaderRenderer: { title: runs("History Hour"), straplineTextOne: runs("History Co"), thumbnail: { musicThumbnailRenderer: { thumbnail: thumbs("https://i.ytimg.com/show=w544-h544", 544) } } } } },
+  };
+  const asked = [];
+  win.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    asked.push(body.browseId);
+    return { ok: true, status: 200, json: async () => pages[body.browseId] };
+  };
+  win.crypto = { subtle: { digest: async () => new Uint8Array(20).buffer } };
+  win.TextEncoder = TextEncoder;
+
+  const show = await bridge.call("playlist", ["ytm:playlist:PLshow", true]);
+  assert.equal(show.header.name, "History Hour");
+  assert.equal(show.header.subtitle, "History Co");
+  assert.ok(show.header.image);
+  assert.deepEqual(show.tracks.map((t) => t.name), ["Episode one"]);
+  assert.deepEqual(asked, ["VLPLshow", "MPSPPLshow"]);
 });
 
 test("an artist page: top songs, albums and singles, and what plays", () => {
