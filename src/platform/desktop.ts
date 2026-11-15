@@ -54,6 +54,9 @@ export interface DesktopShellOptions {
   closeToMiniPlayer?(): boolean;
   /** Closing the main window hides it (true, the default) or quits. */
   hideOnClose?: boolean;
+  /** The tray menu's update line ("Update to …", "Check for Updates…")
+   * (reactive); none when not given. */
+  updateItem?: () => { label: string; onSelect(): void } | null;
 }
 
 /** What the desktop shell installed: show the main window from elsewhere
@@ -163,6 +166,7 @@ export function installDesktopShell(opts: DesktopShellOptions): DesktopShell {
     const ink = token("foreground");
     const showNowPlaying = opts.showNowPlaying;
     const toggleMiniPlayer = opts.toggleMiniPlayer;
+    const update = opts.updateItem?.() ?? null;
     Tray.set({
       icon: trayIcon(ink),
       tooltip: opts.title().trim() ? `YTMFast: ${title}` : "YTMFast",
@@ -185,6 +189,7 @@ export function installDesktopShell(opts: DesktopShellOptions): DesktopShell {
         },
         toggleMiniPlayer && { label: "Mini player", onSelect: () => toggleMiniPlayer() },
         { type: "separator" },
+        update && { label: update.label, onSelect: () => update.onSelect() },
         { label: "Exit", onSelect: quitApp },
       ],
     });
