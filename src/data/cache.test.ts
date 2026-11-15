@@ -69,6 +69,40 @@ test("a new epoch loads again", async () => {
   expect(loads).toBe(2);
 });
 
+test("refetchIfOlder loads again only once the last load is older than asked", async () => {
+  await hydrate();
+  clearMemory();
+  let loads = 0;
+  const source = signal<CacheSource | null>({ account: "acct-a", key: "home", epoch: 0 });
+  const query = cachedQuery(source, async () => ++loads);
+  await until(() => query.data() === 1);
+  query.refetchIfOlder(60_000);
+  await tick(20);
+  expect(loads).toBe(1);
+  await tick(5);
+  query.refetchIfOlder(1);
+  await until(() => query.data() === 2);
+  expect(loads).toBe(2);
+});
+
+test("refetchIfOlder leaves a load that runs alone", async () => {
+  await hydrate();
+  clearMemory();
+  let loads = 0;
+  let release: (v: number) => void = () => {};
+  const source = signal<CacheSource | null>({ account: "acct-a", key: "home", epoch: 0 });
+  const query = cachedQuery(source, () => {
+    loads++;
+    return new Promise<number>((resolve) => (release = resolve));
+  });
+  await until(() => loads === 1);
+  query.refetchIfOlder(0);
+  await tick(20);
+  expect(loads).toBe(1);
+  release(1);
+  await until(() => query.data() === 1);
+});
+
 test("a failed load keeps the cached value and reports the error", async () => {
   await hydrate();
   clearMemory();
