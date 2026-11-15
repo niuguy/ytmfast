@@ -5,7 +5,7 @@
 // version), are written only when they change, and the least recently used
 // go once there are more than `CAPACITY`.
 
-import { type Accessor, resource, signal, Storage } from "nsh";
+import { type Accessor, resource, signal, Storage, untracked } from "nsh";
 
 /** The version of the stored entries' shape; others are dropped. */
 export const SCHEMA = 1;
@@ -188,6 +188,9 @@ export interface CachedQuery<T> {
   error: Accessor<unknown>;
   /** Loads the current source again. */
   refetch(): void;
+  /** Loads the current source again when its last load here finished more
+   * than `maxAgeMs` ago, or never did; not while one runs. */
+  refetchIfOlder(maxAgeMs: number): void;
 }
 
 /** A cache-first query of `source()` (null: nothing to load). The fetcher
@@ -200,6 +203,9 @@ export function cachedQuery<T>(
 ): CachedQuery<T> {
   const live = () => (hydrated() ? source() : null);
   const partial = signal<{ account: string; key: string; v: T } | null>(null);
+  /** When a load of which key last succeeded. Not the entry's `savedAt`:
+   * that moves only when the value changes. */
+  let lastLoad: { account: string; key: string; at: number } | null = null;
   const loaded = resource(live, async (s) => {
     let v: T;
     try {
@@ -208,6 +214,7 @@ export function cachedQuery<T>(
       partial.set(null);
       throw error;
     }
+    lastLoad = { account: s.account, key: s.key, at: Date.now() };
     // Cached before the partial value goes, so something always shows.
     writeCache(s.account, s.key, v);
     partial.set(null);
@@ -233,5 +240,12 @@ export function cachedQuery<T>(
     refreshing: () => data() !== undefined && busy(),
     error: () => (loaded.state() === "errored" ? loaded.error() : undefined),
     refetch: () => loaded.refetch(),
+    refetchIfOlder: (maxAgeMs) => {
+      const s = untracked(live);
+      if (!s || untracked(busy)) return;
+      const last = lastLoad;
+      if (last && last.account === s.account && last.key === s.key && Date.now() - last.at <= maxAgeMs) return;
+      loaded.refetch();
+    },
   };
 }

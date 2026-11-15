@@ -1,6 +1,6 @@
 // Home: the greeting, then the sections of the day.
 
-import { List, signal, Text, untracked, View } from "nsh";
+import { effect, lifecycle, List, signal, Text, untracked, View, wakeCount } from "nsh";
 import { FilterChips } from "../components/library/chips";
 import { pageEnd, playerOverlap } from "../components/layout";
 import { homeQuery } from "../data/queries";
@@ -26,8 +26,26 @@ function Greeting(props: { text: string; entrance?: boolean }) {
 /** The chip Home is filtered by ("" for none); kept while the app runs. */
 const chip = signal("");
 
+/** How long Home's sections stand before it loads them again: checked when
+ * Home is opened, the app comes to the front, or the system wakes. */
+export const HOME_FRESH_MS = 30 * 60 * 1000;
+
 export function HomePage() {
   const home = homeQuery(chip);
+  // Not on the first run: the query is loading already.
+  let first = true;
+  effect(() => {
+    rootOpens();
+    wakeCount();
+    const active = lifecycle() === "active";
+    untracked(() => {
+      if (first) {
+        first = false;
+        return;
+      }
+      if (active && currentRoute().name === "home") home.refetchIfOlder(HOME_FRESH_MS);
+    });
+  });
   return (
     <AppPage title="Home" testID="page-home" shown={() => currentRoute().name === "home"}>
       {/* Virtualized both ways: the sections down the page are a list, and
